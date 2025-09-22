@@ -5,6 +5,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "../Jack/voxel.hpp"
+#include "../James/shaders.hpp"
+#include "../Ryder/generation.hpp"
+
 #include <iostream>
 
 static int SCR_WIDTH = 1200;
