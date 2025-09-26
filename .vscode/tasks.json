@@ -14,7 +14,6 @@
 				"-L${workspaceFolder}/dependencies/library/",
 				"${workspaceFolder}/source/main.cpp",
 				"${workspaceFolder}/source/glad.c",
-				"-lglfw3.4",
 				"-o",
 				"${workspaceFolder}/app",
 				"-framework",
