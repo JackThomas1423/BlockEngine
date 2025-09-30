@@ -8,7 +8,6 @@
 //  - 
 
 #include "voxel.hpp"
-#include "../Ryder/generation.hpp"
 
 std::vector<float> voxelToMesh(ColorId cid) {
     return {
