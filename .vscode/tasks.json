@@ -15,7 +15,6 @@
 				"${workspaceFolder}/source/main.cpp",
 				"${workspaceFolder}/source/glad.c",
 				"${workspaceFolder}/Ryder/generation.cpp",
-				"${workspaceFolder}/dependencies/library/libglfw.3.4.dylib",
 				"-lglfw3.4",
 				"-o",
 				"${workspaceFolder}/app",
