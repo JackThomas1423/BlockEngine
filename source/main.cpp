@@ -66,15 +66,36 @@ int main()
     }
 
     std::vector<float> vertices = {
-        0.5f,  0.5f, 0.0f,  // top right
-     0.5f, -0.5f, 0.0f,  // bottom right
-    -0.5f, -0.5f, 0.0f,  // bottom left
-    -0.5f,  0.5f, 0.0f   // top left 
+        0.5f,  0.5f, 0.5f,  1.0f, 0.0f, 0.0f,  // top right           [0]
+        0.5f, -0.5f, 0.5f,  0.0f, 1.0f, 0.0f,  // bottom right        [1]
+        -0.5f, -0.5f, 0.5f,  0.0f, 0.0f, 1.0f,  // bottom left        [2]
+        -0.5f,  0.5f, 0.5f,  0.5f, 0.5f, 0.0f,   // top left          [3]
+
+        0.5f,  0.5f, -0.5f,  0.0f, 0.5f, 0.5f,  // back top right     [4]
+        0.5f, -0.5f, -0.5f,  0.5f, 0.0f, 0.5f,  // back bottom right  [5]
+        -0.5f, -0.5f, -0.5f,  0.25f, 0.0f, 1.0f, // back bottom left  [6]
+        -0.5f,  0.5f, -0.5f,  1.0f, 0.0f, 0.25f  // back top left     [7]
     };
 
     std::vector<unsigned int> indices = {
-        0, 1, 3,   // first triangle
-        1, 2, 3     // second triangle
+        0, 1, 3,   // front face
+        1, 2, 3,
+
+        4, 5, 7,   // back face
+        5, 6, 7,
+
+        4, 0, 7,   // right face
+        0, 3, 7,
+
+        5, 1, 6,   // left face
+        1, 2, 6,
+
+        1, 5, 0,   // top face
+        5, 4, 0,
+
+        2, 6, 3,   // bottom face
+        6, 7, 3
+        
     };
 
     Shader base("source/base.vs","source/base.fs");
@@ -92,10 +113,11 @@ int main()
     view = glm::translate(view, glm::vec3(0.0f, 0.0f, -3.0f));
     projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
 
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
     // render loop
     // -----------
+    glEnable(GL_DEPTH_TEST);
     while (!glfwWindowShouldClose(window))
     {
         float currentFrame = static_cast<float>(glfwGetTime());
@@ -108,7 +130,7 @@ int main()
         // render
         // ------
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
@@ -121,8 +143,7 @@ int main()
         // draw our first triangle
         base.use();
         obj.bindVertexArray();
-        //glDrawArrays(GL_TRIANGLES, 0, 6);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
         // glBindVertexArray(0); // no need to unbind it every time 
  
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)

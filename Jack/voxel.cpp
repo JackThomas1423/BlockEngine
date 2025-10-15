@@ -11,14 +11,14 @@
 
 std::vector<float> voxelToMesh(ColorId cid) {
     return {
-        1.0f, 1.0f, 1.0f, (float)cid,
-        1.0f, 1.0f, 0.0f, (float)cid,
-        1.0f, 0.0f, 0.0f, (float)cid,
-        1.0f, 0.0f, 1.0f, (float)cid,
+        0.5f,  0.5f, 0.5f,    // top right          [0]
+        0.5f, -0.5f, 0.5f,    // bottom right       [1]
+        -0.5f, -0.5f, 0.5f,   // bottom left        [2]
+        -0.5f,  0.5f, 0.5f,   // top left           [3]
 
-        0.0f, 1.0f, 1.0f, (float)cid,
-        0.0f, 0.0f, 1.0f, (float)cid,
-        0.0f, 1.0f, 0.0f, (float)cid,
-        0.0f, 0.0f, 0.0f, (float)cid
+        0.5f,  0.5f, -0.5f,   // back top right     [4]
+        0.5f, -0.5f, -0.5f,   // back bottom right  [5]
+        -0.5f, -0.5f, -0.5f,  // back bottom left   [6]
+        -0.5f,  0.5f, -0.5f,  // back top left      [7]
     };
 }
