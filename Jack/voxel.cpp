@@ -9,4 +9,16 @@
 
 #include "voxel.hpp"
 
- 
+std::vector<float> voxelToMesh(ColorId cid) {
+    return {
+        1.0f, 1.0f, 1.0f, (float)cid,
+        1.0f, 1.0f, 0.0f, (float)cid,
+        1.0f, 0.0f, 0.0f, (float)cid,
+        1.0f, 0.0f, 1.0f, (float)cid,
+
+        0.0f, 1.0f, 1.0f, (float)cid,
+        0.0f, 0.0f, 1.0f, (float)cid,
+        0.0f, 1.0f, 0.0f, (float)cid,
+        0.0f, 0.0f, 0.0f, (float)cid
+    };
+}
