@@ -15,6 +15,7 @@
 				"${workspaceFolder}/source/main.cpp",
 				"${workspaceFolder}/source/glad.c",
 				"${workspaceFolder}/Ryder/generation.cpp",
+				"${workspaceFolder}/Jack/voxel.cpp",
 				"-lglfw3.4",
 				"-o",
 				"${workspaceFolder}/app",

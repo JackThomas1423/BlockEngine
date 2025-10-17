@@ -16,13 +16,14 @@ class Object {
             bindVertices(vertices);
             bindIndices(indices);
 
-            setVertexPointers({3, 3});
+            setVertexPointers({3});
 
             glBindBuffer(GL_ARRAY_BUFFER, 0);
             glBindVertexArray(0);
 
         }
 
+        //does not work with in-built shader structs
         void setVertexPointers(std::vector<uint8_t> attributes) {
             int pointerCount = 0;
             int stride = std::accumulate(attributes.begin(), attributes.end(), 0);

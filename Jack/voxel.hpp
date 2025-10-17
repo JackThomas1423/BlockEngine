@@ -9,9 +9,13 @@
 // add chunk specific data as needed
 
 typedef uint8_t ColorId;
+typedef std::vector<float> Mesh;
 
 struct Chunk {
     ColorId data[CHUNK_WIDTH][CHUNK_HEIGHT][CHUNK_DEPTH];
 };
 
 std::vector<float> voxelToMesh();
+Mesh voxelPlain();
+
+std::vector<unsigned int> genConnectors();

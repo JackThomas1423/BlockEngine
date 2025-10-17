@@ -10,6 +10,7 @@
 #include "camera.hpp"
 
 #include "../Ryder/generation.hpp"
+#include "../Jack/voxel.hpp"
 
 #include <iostream>
 
@@ -65,7 +66,7 @@ int main()
         return -1;
     }
 
-    std::vector<float> vertices = {
+    /*std::vector<float> vertices = {
         0.5f,  0.5f, 0.5f,  1.0f, 0.0f, 0.0f,  // top right           [0]
         0.5f, -0.5f, 0.5f,  0.0f, 1.0f, 0.0f,  // bottom right        [1]
         -0.5f, -0.5f, 0.5f,  0.0f, 0.0f, 1.0f,  // bottom left        [2]
@@ -75,9 +76,11 @@ int main()
         0.5f, -0.5f, -0.5f,  0.5f, 0.0f, 0.5f,  // back bottom right  [5]
         -0.5f, -0.5f, -0.5f,  0.25f, 0.0f, 1.0f, // back bottom left  [6]
         -0.5f,  0.5f, -0.5f,  1.0f, 0.0f, 0.25f  // back top left     [7]
-    };
+    };*/
 
-    std::vector<unsigned int> indices = {
+    std::vector<float> vertices = voxelPlain();
+
+    /*std::vector<unsigned int> indices = {
         0, 1, 3,   // front face
         1, 2, 3,
 
@@ -96,7 +99,12 @@ int main()
         2, 6, 3,   // bottom face
         6, 7, 3
         
-    };
+    };*/
+
+    std::vector<unsigned int> indices = genConnectors();
+    for (int index = 0; index < indices.size(); index += 3) {
+        std::cout << indices[index] << " " << indices[index + 1] << " " << indices[index + 2] << std::endl;
+    }
 
     Shader base("source/base.vs","source/base.fs");
     Object obj(vertices,indices);
@@ -109,7 +117,7 @@ int main()
     glm::mat4 view = glm::mat4(1.0f);
     glm::mat4 model = glm::mat4(1.0f);
 
-    model = glm::rotate(model, glm::radians(-55.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     view = glm::translate(view, glm::vec3(0.0f, 0.0f, -3.0f));
     projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
 
@@ -136,7 +144,7 @@ int main()
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 
-        model = glm::rotate(model, (float)deltaTime * glm::radians(50.0f), glm::vec3(0.5f, 1.0f, 0.0f));
+        //model = glm::rotate(model, (float)deltaTime * glm::radians(50.0f), glm::vec3(0.5f, 1.0f, 0.0f));
         view = camera.getViewMatrix();
         projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
 
