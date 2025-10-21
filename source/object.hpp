@@ -16,7 +16,7 @@ class Object {
             bindVertices(vertices);
             bindIndices(indices);
 
-            setVertexPointers({3});
+            setVertexPointers({3, 1});
 
             glBindBuffer(GL_ARRAY_BUFFER, 0);
             glBindVertexArray(0);

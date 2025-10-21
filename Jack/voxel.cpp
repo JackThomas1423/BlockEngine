@@ -11,15 +11,15 @@
 
 Mesh voxelToMesh() {
     return {
-        0.5f,  0.5f, 0.5f,    // top right          [0]
-        0.5f, -0.5f, 0.5f,    // bottom right       [1]
-        -0.5f, -0.5f, 0.5f,   // bottom left        [2]
-        -0.5f,  0.5f, 0.5f,   // top left           [3]
+        0.5f,  0.5f, 0.5f, 0.0f,    // top right          [0]
+        0.5f, -0.5f, 0.5f, 1.0f,    // bottom right       [1]
+        -0.5f, -0.5f, 0.5f, 2.0f,   // bottom left        [2]
+        -0.5f,  0.5f, 0.5f, 3.0f,   // top left           [3]
 
-        0.5f,  0.5f, -0.5f,   // back top right     [4]
-        0.5f, -0.5f, -0.5f,   // back bottom right  [5]
-        -0.5f, -0.5f, -0.5f,  // back bottom left   [6]
-        -0.5f,  0.5f, -0.5f,  // back top left      [7]
+        0.5f,  0.5f, -0.5f, 0.0f,   // back top right     [4]
+        0.5f, -0.5f, -0.5f, 1.0f,   // back bottom right  [5]
+        -0.5f, -0.5f, -0.5f, 2.0f,  // back bottom left   [6]
+        -0.5f,  0.5f, -0.5f, 3.0f   // back top left      [7]
     };
 }
 
@@ -50,8 +50,11 @@ Mesh voxelPlain() {
     for (int x = 0; x < 10; ++x) {
         for (int z = 0; z < 10; ++z) {
             Mesh instance = voxelToMesh();
-            for (int n = 0; n < 7; ++n) { instance[n*3] += x; }
-            for (int n = 0; n < 7; ++n) { instance[(n*3)+2] += z; }
+            for (int index = 0; index < 8; ++index) {
+                instance[index*4] += x;
+                instance[((index*4)+1)] += z;
+            }
+
             plain.insert(std::end(plain), std::begin(instance), std::end(instance));
         }
     }
@@ -60,11 +63,13 @@ Mesh voxelPlain() {
 
 std::vector<unsigned int> genConnectors() {
     std::vector<unsigned int> connections;
-    auto cc = cubeConnector();
-    connections.insert(std::end(connections), std::begin(cc), std::end(cc));
-    for (int n = 0; n < 36; ++n) {
-        cc[n] += 8;
+    for (int cubeIndex = 0; cubeIndex < 100; ++cubeIndex) {
+        auto cc = cubeConnector();
+        for (int n = 0; n < 36; ++n) {
+            cc[n] += 8*cubeIndex;
+        }
+        connections.insert(std::end(connections), std::begin(cc), std::end(cc));
     }
-    connections.insert(std::end(connections), std::begin(cc), std::end(cc));
+
     return connections;
 }
