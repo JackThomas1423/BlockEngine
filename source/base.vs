@@ -6,9 +6,16 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
-out float colorIndex;
+out vec3 color;
+
+const vec3 colorLookup[4] = vec3[4](
+  vec3(1.0, 0.0, 0.0),
+  vec3(0.0, 1.0, 0.0),
+  vec3(0.0, 0.0, 1.0),
+  vec3(1.0, 1.0, 0.0)
+);
 
 void main() {
     gl_Position = projection * view * model * vec4(aPos, 1.0);
-    colorIndex = index;
+    color = colorLookup[int(index)];
 }

@@ -16,6 +16,7 @@ struct Chunk {
 };
 
 std::vector<float> voxelToMesh();
-Mesh voxelPlain();
+std::vector<unsigned int> cubeConnector();
 
+Mesh voxelPlain();
 std::vector<unsigned int> genConnectors();
