@@ -45,6 +45,24 @@ std::vector<unsigned int> cubeConnector() {
     };
 }
 
+// mesh the chunk with a mesh to get the mesh using the chunk mesh method implemented in this mesh chunk function (mesh)
+Mesh meshChunk(Chunk chunk) {
+    Mesh chunkMesh; // the chunk mesh
+    for (int x = 0; x < CHUNK_WIDTH; ++x) {
+        for (int y = 0; y < CHUNK_HEIGHT; ++y) {
+            for (int z = 0; z < CHUNK_WIDTH; ++z) {
+                ColorId color_id = chunk.data[x][y][z];
+                // zero means air block (skip it)
+                if (color_id == 0) continue;
+                Mesh cubeModel = voxelToMesh();
+                //cube model needs to add global_position and xyz
+                chunkMesh.insert(chunkMesh.end(), cubeModel.begin(), cubeModel.end());
+            }
+        }
+    }
+    return chunkMesh;
+}
+
 Mesh voxelPlain() {
     Mesh plain;
     for (int x = 0; x < 10; ++x) {
