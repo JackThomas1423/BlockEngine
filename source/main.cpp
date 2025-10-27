@@ -66,15 +66,17 @@ int main()
         return -1;
     }
 
-    Chunk chunk;
-    chunk.global_position = glm::vec3(0.0f, 0.0f, 0.0f);
+    Chunk chunk(glm::vec3(0.0f, 0.0f, 0.0f));
+
     chunk.data[0][0][0] = 1;
     chunk.data[1][0][0] = 2;
+    chunk.data[2][0][0] = 3;
+    chunk.data[3][0][0] = 2;
 
+    Mesh mesh = meshChunk(chunk);
 
-    std::vector<float> vertices = meshChunk(chunk);
-
-    std::vector<unsigned int> indices = cubeConnector();
+    std::vector<float> vertices = mesh.vertices;
+    std::vector<unsigned int> indices = mesh.indices;
 
     Shader base("source/base.vs","source/base.fs");
     Object obj(vertices,indices);

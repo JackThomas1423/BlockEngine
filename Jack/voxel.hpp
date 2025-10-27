@@ -13,11 +13,26 @@
 
 // color id of zero should represent air/no-block
 typedef uint8_t ColorId;
-typedef std::vector<float> Mesh;
 
-struct Chunk {
+struct Mesh {
+    std::vector<float> vertices;
+    std::vector<unsigned int> indices;
+};
+
+class Chunk {
+public:
     glm::vec3 global_position;
     ColorId data[CHUNK_WIDTH][CHUNK_HEIGHT][CHUNK_DEPTH];
+    Chunk(glm::vec3 position) {
+        global_position = position;
+        for (int x = 0; x < CHUNK_WIDTH; ++x) {
+            for (int y = 0; y < CHUNK_HEIGHT; ++y) {
+                for (int z = 0; z < CHUNK_DEPTH; ++z) {
+                    data[x][y][z] = 0;
+                }
+            }
+        }
+    }
 };
 
 Mesh meshChunk(Chunk chunk);
