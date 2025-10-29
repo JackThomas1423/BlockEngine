@@ -8,11 +8,14 @@ uniform mat4 projection;
 
 out vec3 color;
 
-const vec3 colorLookup[4] = vec3[4](
+const vec3 colorLookup[7] = vec3[7](
+  vec3(0.0, 0.0, 0.0),
   vec3(1.0, 0.0, 0.0),
   vec3(0.0, 1.0, 0.0),
   vec3(0.0, 0.0, 1.0),
-  vec3(1.0, 1.0, 0.0)
+  vec3(1.0, 1.0, 0.0),
+  vec3(0.0, 1.0, 1.0),
+  vec3(1.0, 0.0, 1.0)
 );
 
 void main() {

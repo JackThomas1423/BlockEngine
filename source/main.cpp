@@ -69,9 +69,12 @@ int main()
     Chunk chunk(glm::vec3(0.0f, 0.0f, 0.0f));
 
     chunk.data[0][0][0] = 1;
-    chunk.data[1][0][0] = 2;
-    chunk.data[2][0][0] = 3;
-    chunk.data[3][0][0] = 2;
+    chunk.data[1][0][0] = 0;
+    chunk.data[2][0][0] = 1;
+    chunk.data[3][0][0] = 1;
+    chunk.data[4][0][0] = 1;
+    chunk.data[5][0][0] = 0;
+    chunk.data[6][0][0] = 1;
 
     Mesh mesh = meshChunk(chunk);
 
@@ -79,7 +82,7 @@ int main()
     std::vector<unsigned int> indices = mesh.indices;
 
     Shader base("source/base.vs","source/base.fs");
-    Object obj(vertices,indices);
+    Object obj(vertices,indices,{3,1});
 
     unsigned int projectionLoc = glGetUniformLocation(base.getShaderID(), "projection");
     unsigned int viewLoc = glGetUniformLocation(base.getShaderID(), "view");
@@ -97,6 +100,11 @@ int main()
 
     // render loop
     // -----------
+    
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_FRONT);
+    glFrontFace(GL_CCW);
+
     glEnable(GL_DEPTH_TEST);
     while (!glfwWindowShouldClose(window))
     {

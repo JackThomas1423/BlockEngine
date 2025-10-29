@@ -36,9 +36,3 @@ public:
 };
 
 Mesh meshChunk(Chunk chunk);
-
-std::vector<float> voxelToMesh();
-std::vector<unsigned int> cubeConnector();
-
-Mesh voxelPlain();
-std::vector<unsigned int> genConnectors();

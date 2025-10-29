@@ -7,7 +7,7 @@ class Object {
     public:
         unsigned int VAO, EBO, VBO;
 
-        Object(std::vector<float> vertices, std::vector<unsigned int> indices) {
+        Object(std::vector<float> vertices, std::vector<unsigned int> indices, std::vector<uint8_t> locations) {
             glGenBuffers (1, & VBO);
             glGenBuffers (1, & EBO);
             glGenVertexArrays(1, &VAO);
@@ -16,7 +16,7 @@ class Object {
             bindVertices(vertices);
             bindIndices(indices);
 
-            setVertexPointers({3, 1});
+            setVertexPointers(locations);
 
             glBindBuffer(GL_ARRAY_BUFFER, 0);
             glBindVertexArray(0);
@@ -36,11 +36,6 @@ class Object {
                 currentOffset += attributes[i];
                 ++pointerCount;
             }
-
-            
-
-            //glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-            //glEnableVertexAttribArray(1);
         }
 
         void bindVertices(std::vector<float> vertices) {

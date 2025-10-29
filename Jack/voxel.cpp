@@ -25,25 +25,32 @@ std::vector<float> voxelToMesh(float x, float y, float z, float c = 0.0f) {
 
 std::vector<unsigned int> cubeConnector() {
     return {
-        0, 1, 3,   // front face
+        // Front face (z+)
+        0, 1, 3,
         1, 2, 3,
 
-        4, 5, 7,   // back face
-        5, 6, 7,
+        // Back face (z-)
+        4, 7, 5,
+        5, 7, 6,
 
-        4, 0, 7,   // right face
+        // Left face (x-)
+        4, 0, 7,
         0, 3, 7,
 
-        5, 1, 6,   // left face
-        1, 2, 6,
+        // Right face (x+)
+        1, 5, 2,
+        5, 6, 2,
 
-        1, 5, 0,   // top face
-        5, 4, 0,
+        // Top face (y+)
+        3, 2, 7,
+        2, 6, 7,
 
-        2, 6, 3,   // bottom face
-        6, 7, 3
+        // Bottom face (y-)
+        4, 5, 0,
+        5, 1, 0
     };
 }
+
 
 // mesh the chunk with a mesh to get the mesh using the chunk mesh method implemented in this mesh chunk function (mesh)
 Mesh meshChunk(Chunk chunk) {
