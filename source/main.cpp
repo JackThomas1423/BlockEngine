@@ -10,6 +10,7 @@
 #include "camera.hpp"
 
 #include "../Ryder/generation.hpp"
+#include "../Jack/voxel.hpp"
 
 #include <iostream>
 
@@ -65,17 +66,17 @@ int main()
         return -1;
     }
 
-    std::vector<float> vertices = {
-        0.5f,  0.5f, 0.0f,  // top right
-     0.5f, -0.5f, 0.0f,  // bottom right
-    -0.5f, -0.5f, 0.0f,  // bottom left
-    -0.5f,  0.5f, 0.0f   // top left 
-    };
+    Chunk chunk(glm::vec3(0.0f, 0.0f, 0.0f));
 
-    std::vector<unsigned int> indices = {
-        0, 1, 3,   // first triangle
-        1, 2, 3     // second triangle
-    };
+    chunk.data[0][0][0] = 1;
+    chunk.data[1][0][0] = 2;
+    chunk.data[2][0][0] = 3;
+    chunk.data[3][0][0] = 2;
+
+    Mesh mesh = meshChunk(chunk);
+
+    std::vector<float> vertices = mesh.vertices;
+    std::vector<unsigned int> indices = mesh.indices;
 
     Shader base("source/base.vs","source/base.fs");
     Object obj(vertices,indices);
@@ -88,7 +89,7 @@ int main()
     glm::mat4 view = glm::mat4(1.0f);
     glm::mat4 model = glm::mat4(1.0f);
 
-    model = glm::rotate(model, glm::radians(-55.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     view = glm::translate(view, glm::vec3(0.0f, 0.0f, -3.0f));
     projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
 
@@ -96,6 +97,7 @@ int main()
 
     // render loop
     // -----------
+    glEnable(GL_DEPTH_TEST);
     while (!glfwWindowShouldClose(window))
     {
         float currentFrame = static_cast<float>(glfwGetTime());
@@ -108,21 +110,20 @@ int main()
         // render
         // ------
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 
-        model = glm::rotate(model, (float)deltaTime * glm::radians(50.0f), glm::vec3(0.5f, 1.0f, 0.0f));
+        //model = glm::rotate(model, (float)deltaTime * glm::radians(50.0f), glm::vec3(0.5f, 1.0f, 0.0f));
         view = camera.getViewMatrix();
         projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
 
         // draw our first triangle
         base.use();
         obj.bindVertexArray();
-        //glDrawArrays(GL_TRIANGLES, 0, 6);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
         // glBindVertexArray(0); // no need to unbind it every time 
  
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)

@@ -1,6 +1,7 @@
 #include <glad/glad.h>
 
 #include <vector>
+#include <numeric>
 
 class Object {
     public:
@@ -12,14 +13,44 @@ class Object {
             glGenVertexArrays(1, &VAO);
 
             bindVertexArray();
+            bindVertices(vertices);
+            bindIndices(indices);
+
+            setVertexPointers({3, 1});
+
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            glBindVertexArray(0);
+
+        }
+
+        //does not work with in-built shader structs
+        void setVertexPointers(std::vector<uint8_t> attributes) {
+            int pointerCount = 0;
+            int stride = std::accumulate(attributes.begin(), attributes.end(), 0);
+            int currentOffset = 0;
+
+            for (int i = 0; i < attributes.size(); ++i) {
+                glVertexAttribPointer(pointerCount, attributes[i], GL_FLOAT, GL_FALSE, stride * sizeof(float), (void*)(currentOffset * sizeof(float)));
+                glEnableVertexAttribArray(pointerCount);
+
+                currentOffset += attributes[i];
+                ++pointerCount;
+            }
+
+            
+
+            //glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+            //glEnableVertexAttribArray(1);
+        }
+
+        void bindVertices(std::vector<float> vertices) {
             glBindBuffer(GL_ARRAY_BUFFER, VBO);
             glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+        }
 
+        void bindIndices(std::vector<unsigned int> indices) {
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW); 
-
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-            glEnableVertexAttribArray(0);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
         }
 
         void bindVertexArray() {
