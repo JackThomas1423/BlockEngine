@@ -102,8 +102,9 @@ int main()
     // -----------
     
     glEnable(GL_CULL_FACE);
-    glCullFace(GL_FRONT);
+    glCullFace(GL_BACK);
     glFrontFace(GL_CCW);
+
 
     glEnable(GL_DEPTH_TEST);
     while (!glfwWindowShouldClose(window))
@@ -152,8 +153,20 @@ void processInput(GLFWwindow *window)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
-    
-    float cameraSpeed = 2.0f * deltaTime;
+
+    // Tab toggles wireframe / fill mode on key-press (edge-detected)
+    static bool tabWasPressed = false;
+    static bool wireframe = false;
+    int tabState = glfwGetKey(window, GLFW_KEY_TAB);
+    if (tabState == GLFW_PRESS && !tabWasPressed) {
+        wireframe = !wireframe;
+        if (wireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        else glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        tabWasPressed = true;
+    }
+    if (tabState == GLFW_RELEASE) tabWasPressed = false;
+
+    float cameraSpeed = 5.0f * deltaTime;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         camera.translate(cameraSpeed * camera.getFront());
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -162,6 +175,10 @@ void processInput(GLFWwindow *window)
         camera.translate(-glm::normalize(glm::cross(camera.getFront(), camera.getUp())) * cameraSpeed);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         camera.translate(glm::normalize(glm::cross(camera.getFront(), camera.getUp())) * cameraSpeed);
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+        camera.translate(-cameraSpeed * camera.getUp());
+    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+        camera.translate(cameraSpeed * camera.getUp());
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
