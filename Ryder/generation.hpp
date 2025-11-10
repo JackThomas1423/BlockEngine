@@ -1,4 +1,8 @@
 #pragma once
 
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
+#include <glm/gtc/noise.hpp>
+#include <glm/glm.hpp>
+#include <vector>
+#include "../Jack/voxel.hpp"
+
+void genChunk(Chunk& chunk);
