@@ -27,18 +27,20 @@ std::vector<std::array<int, 3>> voxelNeighbors = {
 
 std::vector<float> voxelToMesh(float x, float y, float z, float c = 0.0f) {
     return { 0.5f + x, 0.5f + y, 0.5f + z, c, // top right [0]
-    0.5f + x, -0.5f + y, 0.5f + z, c, // bottom right [1]
-    -0.5f + x, -0.5f + y, 0.5f + z, c, // bottom left [2]
-    -0.5f + x, 0.5f + y, 0.5f + z, c, // top left [3]
-    0.5f + x, 0.5f + y, -0.5f + z, c, // back top right [4]
-    0.5f + x, -0.5f + y, -0.5f + z, c, // back bottom right [5]
-    -0.5f + x, -0.5f + y, -0.5f + z, c, // back bottom left [6]
-    -0.5f + x, 0.5f + y, -0.5f + z, c // back top left [7]
+    0.5f + x, -0.5f + y, 0.5f + z, c,         // bottom right [1]
+    -0.5f + x, -0.5f + y, 0.5f + z, c,        // bottom left [2]
+    -0.5f + x, 0.5f + y, 0.5f + z, c,         // top left [3]
+    0.5f + x, 0.5f + y, -0.5f + z, c,         // back top right [4]
+    0.5f + x, -0.5f + y, -0.5f + z, c,        // back bottom right [5]
+    -0.5f + x, -0.5f + y, -0.5f + z, c,       // back bottom left [6]
+    -0.5f + x, 0.5f + y, -0.5f + z, c         // back top left [7]
     };
 }
 
 Mesh meshChunk(Chunk chunk) {
     Mesh chunkMesh;
+
+    std::unordered_map<Vertex, int, VertexHash> vertexMap;
     for (int x = 0; x < CHUNK_WIDTH; ++x) {
         for (int y = 0; y < CHUNK_HEIGHT; ++y) {
             for (int z = 0; z < CHUNK_DEPTH; ++z) {
@@ -48,38 +50,14 @@ Mesh meshChunk(Chunk chunk) {
                 
                 // generate vertices
                 std::vector<float> cubeVerts = voxelToMesh((float)x, (float)y, (float)z, (float)color_id);
-                cubeVerts[0] += chunk.global_position.x;
-                cubeVerts[1] += chunk.global_position.y;
-                cubeVerts[2] += chunk.global_position.z;
 
-                cubeVerts[4] += chunk.global_position.x;
-                cubeVerts[5] += chunk.global_position.y;
-                cubeVerts[6] += chunk.global_position.z;
+                for (int i = 0; i < cubeVerts.size() / 4; ++i) {
+                    // Adjust vertex positions based on chunk's global position
+                    cubeVerts[i * 4 + 0] += chunk.global_position.x;
+                    cubeVerts[i * 4 + 1] += chunk.global_position.y;
+                    cubeVerts[i * 4 + 2] += chunk.global_position.z;
+                }
 
-                cubeVerts[8] += chunk.global_position.x;
-                cubeVerts[9] += chunk.global_position.y;
-                cubeVerts[10] += chunk.global_position.z;
-
-                cubeVerts[12] += chunk.global_position.x;
-                cubeVerts[13] += chunk.global_position.y;
-                cubeVerts[14] += chunk.global_position.z;
-
-                cubeVerts[16] += chunk.global_position.x;
-                cubeVerts[17] += chunk.global_position.y;
-                cubeVerts[18] += chunk.global_position.z;
-
-                cubeVerts[20] += chunk.global_position.x;
-                cubeVerts[21] += chunk.global_position.y;
-                cubeVerts[22] += chunk.global_position.z;
-
-                cubeVerts[24] += chunk.global_position.x;
-                cubeVerts[25] += chunk.global_position.y;
-                cubeVerts[26] += chunk.global_position.z;
-
-                cubeVerts[28] += chunk.global_position.x;
-                cubeVerts[29] += chunk.global_position.y;
-                cubeVerts[30] += chunk.global_position.z;
-                
                 chunkMesh.vertices.insert(chunkMesh.vertices.end(), cubeVerts.begin(), cubeVerts.end());
 
                 // generate indices

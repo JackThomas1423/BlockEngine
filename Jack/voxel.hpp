@@ -16,11 +16,27 @@
 
 // color id of zero should represent air/no-block
 typedef uint8_t ColorId;
+typedef glm::vec3 Vertex;
 
 struct Mesh {
     std::vector<float> vertices;
     std::vector<unsigned int> indices;
 };
+
+struct VertexHash {
+    std::size_t operator()(const glm::vec3& v) const noexcept {
+        std::size_t hx = std::hash<int>()(v.x);
+        std::size_t hy = std::hash<int>()(v.y);
+        std::size_t hz = std::hash<int>()(v.z);
+
+        // Combine the three hashes
+        std::size_t seed = hx;
+        seed ^= hy + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        seed ^= hz + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        return seed;
+    }
+};
+
 
 class Chunk {
 public:
