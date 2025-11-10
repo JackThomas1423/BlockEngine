@@ -1,10 +1,29 @@
 #include "voxel.hpp"
+
 std::vector<unsigned int> frontFace = { 0, 2, 1, 0, 3, 2 }; // z+
 std::vector<unsigned int> backFace = { 4, 6, 7, 4, 5, 6 }; // z-
 std::vector<unsigned int> leftFace = { 3, 6, 2, 3, 7, 6 }; // x-
 std::vector<unsigned int> rightFace = { 0, 5, 4, 0, 1, 5 }; // x+
 std::vector<unsigned int> topFace = { 3, 4, 7, 3, 0, 4 }; // y+
 std::vector<unsigned int> bottomFace = { 2, 5, 1, 2, 6, 5 }; // y-
+
+std::vector<std::vector<unsigned int>> voxelFaces = {
+    rightFace,
+    leftFace,
+    topFace,
+    bottomFace,
+    frontFace,
+    backFace
+};
+
+std::vector<std::array<int, 3>> voxelNeighbors = {
+    { 1, 0, 0 },
+    { -1, 0, 0 },
+    { 0, 1, 0 },
+    { 0, -1, 0 },
+    { 0, 0, 1 },
+    { 0, 0, -1 }
+};
 
 std::vector<float> voxelToMesh(float x, float y, float z, float c = 0.0f) {
     return { 0.5f + x, 0.5f + y, 0.5f + z, c, // top right [0]
@@ -24,32 +43,73 @@ Mesh meshChunk(Chunk chunk) {
         for (int y = 0; y < CHUNK_HEIGHT; ++y) {
             for (int z = 0; z < CHUNK_DEPTH; ++z) {
                 ColorId color_id = chunk.data[x][y][z];
+                
                 if (color_id == 0) continue;
+                
+                // generate vertices
                 std::vector<float> cubeVerts = voxelToMesh((float)x, (float)y, (float)z, (float)color_id);
-                unsigned int vertexStartIndex = chunkMesh.vertices.size() / 4;
+                cubeVerts[0] += chunk.global_position.x;
+                cubeVerts[1] += chunk.global_position.y;
+                cubeVerts[2] += chunk.global_position.z;
+
+                cubeVerts[4] += chunk.global_position.x;
+                cubeVerts[5] += chunk.global_position.y;
+                cubeVerts[6] += chunk.global_position.z;
+
+                cubeVerts[8] += chunk.global_position.x;
+                cubeVerts[9] += chunk.global_position.y;
+                cubeVerts[10] += chunk.global_position.z;
+
+                cubeVerts[12] += chunk.global_position.x;
+                cubeVerts[13] += chunk.global_position.y;
+                cubeVerts[14] += chunk.global_position.z;
+
+                cubeVerts[16] += chunk.global_position.x;
+                cubeVerts[17] += chunk.global_position.y;
+                cubeVerts[18] += chunk.global_position.z;
+
+                cubeVerts[20] += chunk.global_position.x;
+                cubeVerts[21] += chunk.global_position.y;
+                cubeVerts[22] += chunk.global_position.z;
+
+                cubeVerts[24] += chunk.global_position.x;
+                cubeVerts[25] += chunk.global_position.y;
+                cubeVerts[26] += chunk.global_position.z;
+
+                cubeVerts[28] += chunk.global_position.x;
+                cubeVerts[29] += chunk.global_position.y;
+                cubeVerts[30] += chunk.global_position.z;
+                
                 chunkMesh.vertices.insert(chunkMesh.vertices.end(), cubeVerts.begin(), cubeVerts.end());
-                auto isAir = [&](int nx, int ny, int nz) {
-                    if (nx < 0 || ny < 0 || nz < 0 || nx >= CHUNK_WIDTH || ny >= CHUNK_HEIGHT || nz >= CHUNK_DEPTH) return true;
-                    return chunk.data[nx][ny][nz] == 0;
-                };
-                if (isAir(x, y, z + 1)) // front
-                    for (auto id : frontFace)
-                        chunkMesh.indices.push_back(vertexStartIndex + id);
-                if (isAir(x, y, z - 1)) // back
-                    for (auto id : backFace)
-                        chunkMesh.indices.push_back(vertexStartIndex + id);
-                if (isAir(x - 1, y, z)) // left
-                    for (auto id : leftFace)
-                        chunkMesh.indices.push_back(vertexStartIndex + id);
-                if (isAir(x + 1, y, z)) // right
-                    for (auto id : rightFace)
-                        chunkMesh.indices.push_back(vertexStartIndex + id);
-                if (isAir(x, y + 1, z)) // top
-                    for (auto id : topFace)
-                        chunkMesh.indices.push_back(vertexStartIndex + id);
-                if (isAir(x, y - 1, z)) // bottom
-                    for (auto id : bottomFace)
-                        chunkMesh.indices.push_back(vertexStartIndex + id);
+
+                // generate indices
+                unsigned int vertexOffset = (unsigned int)(chunkMesh.vertices.size() / 4 - 8);
+                for (int face = 0; face < 6; ++face) {
+                    std::array<int, 3> neighborOffset = voxelNeighbors[face];
+                    int neighborX = x + neighborOffset[0];
+                    int neighborY = y + neighborOffset[1];
+                    int neighborZ = z + neighborOffset[2];
+
+                    bool isFaceVisible = false;
+
+                    // Check if neighbor is out of bounds
+                    if (neighborX < 0 || neighborX >= CHUNK_WIDTH ||
+                        neighborY < 0 || neighborY >= CHUNK_HEIGHT ||
+                        neighborZ < 0 || neighborZ >= CHUNK_DEPTH) {
+                        isFaceVisible = true; // Out of bounds, face is visible
+                    } else {
+                        // Check if neighbor voxel is empty
+                        if (chunk.data[neighborX][neighborY][neighborZ] == 0) {
+                            isFaceVisible = true; // Neighbor is empty, face is visible
+                        }
+                    }
+
+                    if (isFaceVisible) {
+                        for (unsigned int index : voxelFaces[face]) {
+                            chunkMesh.indices.push_back(vertexOffset + index);
+                        }
+                    }
+                }
             }
         }
     }
