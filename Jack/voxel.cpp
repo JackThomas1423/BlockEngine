@@ -1,27 +1,5 @@
 #include "voxel.hpp"
 
-const glm::ivec3 faceNormals[] = {
-    { 1, 0, 0}, {-1, 0, 0},
-    { 0, 1, 0}, { 0,-1, 0},
-    { 0, 0, 1}, { 0, 0,-1}
-};
-
-const glm::vec3 faceVerts[6][4] = {
-    // +X (looking from positive X toward origin)
-    {{1,0,0},{1,1,0},{1,1,1},{1,0,1}},
-    // -X (looking from negative X toward origin)
-    {{0,0,1},{0,1,1},{0,1,0},{0,0,0}},
-    // +Y (looking from positive Y toward origin)
-    {{1,1,0},{0,1,0},{0,1,1},{1,1,1}},
-    // -Y (looking from negative Y toward origin)
-    {{1,0,1},{0,0,1},{0,0,0},{1,0,0}},
-    // +Z (looking from positive Z toward origin)
-    {{1,0,1},{1,1,1},{0,1,1},{0,0,1}},
-    // -Z (looking from negative Z toward origin)
-    {{0,0,0},{0,1,0},{1,1,0},{1,0,0}},
-};
-
-
 unsigned int Chunk::addVertex(const Vertex& vertex) {
     auto it = vertexMap.find(vertex);
     if (it != vertexMap.end()) return it->second;

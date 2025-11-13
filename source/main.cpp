@@ -36,7 +36,6 @@ int main()
     // ------------------------------
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
@@ -79,8 +78,8 @@ int main()
     Mesh mesh2 = chunk2.computeMesh();
 
     Shader base("source/base.vs","source/base.fs");
-    Object obj(mesh.vertices, mesh.indices, {3,1});
-    Object obj2(mesh2.vertices, mesh2.indices, {3,1});
+    Object obj(mesh.vertices, mesh.indices, {{GL_FLOAT,3},{GL_FLOAT,1}});
+    Object obj2(mesh2.vertices, mesh2.indices, {{GL_FLOAT,3},{GL_FLOAT,1}});
 
     unsigned int projectionLoc = glGetUniformLocation(base.getShaderID(), "projection");
     unsigned int viewLoc = glGetUniformLocation(base.getShaderID(), "view");
