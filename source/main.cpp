@@ -66,18 +66,29 @@ int main()
         return -1;
     }
 
-    Chunk chunk(glm::vec3(0.0f, 0.0f, 0.0f));
-    Chunk chunk2(glm::vec3(CHUNK_WIDTH, 0.0f, 0.0f));
+    setNoiseSeed(13355);
 
-    genChunk(chunk);
-    genChunk(chunk2);
+    std::vector<Chunk> chunks;
+    for (int x = 0; x < 4; ++x) {
+        for(int y = 0; y < 4; ++y) {
+            for (int z = 0; z < 4; ++z) {
+                chunks.push_back(Chunk(glm::vec3(x * CHUNK_WIDTH, y * CHUNK_HEIGHT, z * CHUNK_DEPTH)));
+            }
+        }
+    }
+    
 
-    Mesh mesh = meshChunk(chunk);
-    Mesh mesh2 = meshChunk(chunk2);
+    std::vector<Mesh> meshes;
+    for (Chunk& chunk : chunks) {
+        genChunk(chunk);
+        meshes.push_back(meshChunk(chunk));
+    }
 
     Shader base("source/base.vs","source/base.fs");
-    Object obj(mesh.vertices, mesh.indices, {3,1});
-    Object obj2(mesh2.vertices, mesh2.indices, {3,1});
+    std::vector<Object> objects;
+    for (Mesh& mesh : meshes) {
+        objects.push_back(Object(mesh.vertices, mesh.indices, {3,1}));
+    }
 
     unsigned int projectionLoc = glGetUniformLocation(base.getShaderID(), "projection");
     unsigned int viewLoc = glGetUniformLocation(base.getShaderID(), "view");
@@ -126,11 +137,10 @@ int main()
 
         // draw our first triangle
         base.use();
-        obj.bindVertexArray();
-        glDrawElements(GL_TRIANGLES, mesh.indices.size(), GL_UNSIGNED_INT, 0);
-
-        obj2.bindVertexArray();
-        glDrawElements(GL_TRIANGLES, mesh2.indices.size(), GL_UNSIGNED_INT, 0);
+        for (int i = 0; i < objects.size(); ++i) {
+            objects[i].bindVertexArray();
+            glDrawElements(GL_TRIANGLES, meshes[i].indices.size(), GL_UNSIGNED_INT, 0);
+        }
 
         // glBindVertexArray(0); // no need to unbind it every time 
  
