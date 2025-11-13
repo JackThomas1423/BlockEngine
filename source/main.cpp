@@ -128,10 +128,8 @@ int main()
 
         // draw our first triangle
         base.use();
-        for (int i = 0; i < objects.size(); ++i) {
-            objects[i].bindVertexArray();
-            glDrawElements(GL_TRIANGLES, meshes[i].indices.size(), GL_UNSIGNED_INT, 0);
-        }
+        obj.bindVertexArray();
+        glDrawElements(GL_TRIANGLES, mesh.indices.size(), GL_UNSIGNED_INT, 0);
 
         // glBindVertexArray(0); // no need to unbind it every time 
  
