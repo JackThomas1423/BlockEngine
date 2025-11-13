@@ -7,7 +7,7 @@ class Object {
     public:
         unsigned int VAO, EBO, VBO;
 
-        Object(std::vector<float> vertices, std::vector<unsigned int> indices, std::vector<uint8_t> locations) {
+        Object(std::vector<float> vertices, std::vector<unsigned int> indices, std::vector<std::pair<GLenum,uint8_t>> locations) {
             glGenBuffers (1, & VBO);
             glGenBuffers (1, & EBO);
             glGenVertexArrays(1, &VAO);
@@ -24,16 +24,16 @@ class Object {
         }
 
         //does not work with in-built shader structs
-        void setVertexPointers(std::vector<uint8_t> attributes) {
+        void setVertexPointers(std::vector<std::pair<GLenum,uint8_t>> attributes) {
             int pointerCount = 0;
-            int stride = std::accumulate(attributes.begin(), attributes.end(), 0);
+            int stride = std::accumulate(attributes.begin(), attributes.end(), 0, [](int a, std::pair<GLenum,uint8_t> b) { return a + b.second; });
             int currentOffset = 0;
 
             for (int i = 0; i < attributes.size(); ++i) {
-                glVertexAttribPointer(pointerCount, attributes[i], GL_FLOAT, GL_FALSE, stride * sizeof(float), (void*)(currentOffset * sizeof(float)));
+                glVertexAttribPointer(pointerCount, attributes[i].second, attributes[i].first, GL_FALSE, stride * sizeof(float), (void*)(currentOffset * sizeof(float)));
                 glEnableVertexAttribArray(pointerCount);
 
-                currentOffset += attributes[i];
+                currentOffset += attributes[i].second;
                 ++pointerCount;
             }
         }

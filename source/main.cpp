@@ -58,7 +58,9 @@ int main()
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 
-    // glad: load all OpenGL function pointers
+    // glad: load all OpenGL function pointers0.
+
+
     // ---------------------------------------
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
@@ -66,29 +68,18 @@ int main()
         return -1;
     }
 
-    setNoiseSeed(13355);
+    Chunk chunk(glm::vec3(0.0f, 0.0f, 0.0f));
+    Chunk chunk2(glm::vec3(CHUNK_WIDTH, 0.0f, 0.0f));
 
-    std::vector<Chunk> chunks;
-    for (int x = 0; x < 4; ++x) {
-        for(int y = 0; y < 4; ++y) {
-            for (int z = 0; z < 4; ++z) {
-                chunks.push_back(Chunk(glm::vec3(x * CHUNK_WIDTH, y * CHUNK_HEIGHT, z * CHUNK_DEPTH)));
-            }
-        }
-    }
-    
+    genChunk(chunk);
+    genChunk(chunk2);
 
-    std::vector<Mesh> meshes;
-    for (Chunk& chunk : chunks) {
-        genChunk(chunk);
-        meshes.push_back(meshChunk(chunk));
-    }
+    Mesh mesh = chunk.computeMesh();
+    Mesh mesh2 = chunk2.computeMesh();
 
     Shader base("source/base.vs","source/base.fs");
-    std::vector<Object> objects;
-    for (Mesh& mesh : meshes) {
-        objects.push_back(Object(mesh.vertices, mesh.indices, {3,1}));
-    }
+    Object obj(mesh.vertices, mesh.indices, {{GL_FLOAT,3},{GL_FLOAT,1}});
+    Object obj2(mesh2.vertices, mesh2.indices, {{GL_FLOAT,3},{GL_FLOAT,1}});
 
     unsigned int projectionLoc = glGetUniformLocation(base.getShaderID(), "projection");
     unsigned int viewLoc = glGetUniformLocation(base.getShaderID(), "view");
