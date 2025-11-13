@@ -36,6 +36,7 @@ int main()
     // ------------------------------
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
@@ -58,7 +59,9 @@ int main()
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 
-    // glad: load all OpenGL function pointers
+    // glad: load all OpenGL function pointers0.
+
+
     // ---------------------------------------
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
@@ -72,8 +75,8 @@ int main()
     genChunk(chunk);
     genChunk(chunk2);
 
-    Mesh mesh = meshChunk(chunk);
-    Mesh mesh2 = meshChunk(chunk2);
+    Mesh mesh = chunk.computeMesh();
+    Mesh mesh2 = chunk2.computeMesh();
 
     Shader base("source/base.vs","source/base.fs");
     Object obj(mesh.vertices, mesh.indices, {3,1});
