@@ -68,18 +68,18 @@ int main()
         return -1;
     }
 
+    std::vector<VertexAttribute> attributes = {
+        VertexAttribute(GL_FLOAT, 3, false), // position
+        VertexAttribute(GL_FLOAT, 1, false)  // color (as float for simplicity)
+    };
+
     Chunk chunk(glm::vec3(0.0f, 0.0f, 0.0f));
-    Chunk chunk2(glm::vec3(CHUNK_WIDTH, 0.0f, 0.0f));
 
     genChunk(chunk);
-    genChunk(chunk2);
-
-    Mesh mesh = chunk.computeMesh();
-    Mesh mesh2 = chunk2.computeMesh();
 
     Shader base("source/base.vs","source/base.fs");
-    Object obj(mesh.vertices, mesh.indices, {{GL_FLOAT,3},{GL_FLOAT,1}});
-    Object obj2(mesh2.vertices, mesh2.indices, {{GL_FLOAT,3},{GL_FLOAT,1}});
+    Mesh mesh = chunk.computeMesh();
+    Object obj(mesh.vertices, attributes, &mesh.indices);
 
     unsigned int projectionLoc = glGetUniformLocation(base.getShaderID(), "projection");
     unsigned int viewLoc = glGetUniformLocation(base.getShaderID(), "view");
