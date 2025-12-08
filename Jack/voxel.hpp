@@ -12,9 +12,9 @@
 #include <glm/gtc/type_ptr.hpp>
 
 
-#define CHUNK_WIDTH 32
-#define CHUNK_HEIGHT 32
-#define CHUNK_DEPTH 32
+#define CHUNK_WIDTH 16
+#define CHUNK_HEIGHT 16
+#define CHUNK_DEPTH 16
 
 // uint8_t is the type used for the colors. this maybe turned into a struct if we need more voxel specific data is needed
 // add chunk specific data as needed
@@ -63,9 +63,9 @@ private:
     unsigned int addVertex(const Vertex& vertex);
     void addFace(const Vertex& v0, const Vertex& v1, const Vertex& v2, const Vertex& v3);
 public:
-    glm::vec3 global_position;
+    glm::ivec3 global_position;
     ColorId data[CHUNK_WIDTH][CHUNK_HEIGHT][CHUNK_DEPTH];
 
-    Chunk(glm::vec3 position);
+    Chunk(glm::ivec3 position);
     Mesh computeMesh();
 };

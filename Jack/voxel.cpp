@@ -30,7 +30,7 @@ void Chunk::addFace(const Vertex& v0, const Vertex& v1, const Vertex& v2, const 
     indices.push_back(i3);
 }
 
-Chunk::Chunk(glm::vec3 position) {
+Chunk::Chunk(glm::ivec3 position) {
     global_position = position;
     for (int x = 0; x < CHUNK_WIDTH; ++x) {
         for (int y = 0; y < CHUNK_HEIGHT; ++y) {
@@ -145,7 +145,7 @@ Mesh Chunk::computeMesh() {
                         du[u] = w;
                         dv[v] = h;
                         
-                        glm::vec3 base = global_position + glm::vec3(p[0], p[1], p[2]);
+                        glm::vec3 base = global_position + glm::ivec3(p[0], p[1], p[2]);
                         
                         if (direction > 0) {
                             v0 = base;

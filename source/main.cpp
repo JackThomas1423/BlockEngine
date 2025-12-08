@@ -73,13 +73,24 @@ int main()
         VertexAttribute(GL_FLOAT, 1, false)  // color (as float for simplicity)
     };
 
-    Chunk chunk(glm::vec3(0.0f, 0.0f, 0.0f));
+    Chunk chunk(glm::ivec3(0, 0, 0));
+    Chunk chunk2(glm::ivec3(0, 1, 0));
 
     genChunk(chunk);
+    genChunk(chunk2);
 
     Shader base("source/base.vs","source/base.fs");
     Mesh mesh = chunk.computeMesh();
+    Mesh mesh2 = chunk2.computeMesh();
     Object obj(mesh.vertices, attributes, &mesh.indices);
+    Object obj2(mesh2.vertices, attributes, &mesh2.indices);
+
+    std::vector<glm::vec3> instancedPoints = {
+        glm::vec3(2.0f, 0.0f, 0.0f),
+        glm::vec3(-2.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 2.0f, 0.0f),
+        glm::vec3(0.0f, -2.0f, 0.0f)
+    };
 
     unsigned int projectionLoc = glGetUniformLocation(base.getShaderID(), "projection");
     unsigned int viewLoc = glGetUniformLocation(base.getShaderID(), "view");
@@ -121,7 +132,7 @@ int main()
         glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-
+        
         //model = glm::rotate(model, (float)deltaTime * glm::radians(50.0f), glm::vec3(0.5f, 1.0f, 0.0f));
         view = camera.getViewMatrix();
         projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
@@ -130,6 +141,8 @@ int main()
         base.use();
         obj.bindVertexArray();
         glDrawElements(GL_TRIANGLES, mesh.indices.size(), GL_UNSIGNED_INT, 0);
+        obj2.bindVertexArray();
+        glDrawElements(GL_TRIANGLES, mesh2.indices.size(), GL_UNSIGNED_INT, 0);
 
         // glBindVertexArray(0); // no need to unbind it every time 
  
