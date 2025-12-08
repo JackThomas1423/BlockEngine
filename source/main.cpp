@@ -19,10 +19,10 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void processInput(GLFWwindow *window);
 
 // settings
-const unsigned int SCR_WIDTH = 800;
-const unsigned int SCR_HEIGHT = 600;
+const unsigned int SCR_WIDTH = 1200;
+const unsigned int SCR_HEIGHT = 900;
 
-Camera camera(glm::vec3(0.0f, 0.0f, 3.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 45.0f);
+Camera camera(glm::vec3(0.0f, 0.0f, 3.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 70.0f);
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
@@ -58,7 +58,9 @@ int main()
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 
-    // glad: load all OpenGL function pointers
+    // glad: load all OpenGL function pointers0.
+
+
     // ---------------------------------------
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
@@ -66,20 +68,18 @@ int main()
         return -1;
     }
 
+    std::vector<VertexAttribute> attributes = {
+        VertexAttribute(GL_FLOAT, 3, false), // position
+        VertexAttribute(GL_FLOAT, 1, false)  // color (as float for simplicity)
+    };
+
     Chunk chunk(glm::vec3(0.0f, 0.0f, 0.0f));
 
-    chunk.data[0][0][0] = 1;
-    chunk.data[1][0][0] = 2;
-    chunk.data[2][0][0] = 3;
-    chunk.data[3][0][0] = 2;
-
-    Mesh mesh = meshChunk(chunk);
-
-    std::vector<float> vertices = mesh.vertices;
-    std::vector<unsigned int> indices = mesh.indices;
+    genChunk(chunk);
 
     Shader base("source/base.vs","source/base.fs");
-    Object obj(vertices,indices);
+    Mesh mesh = chunk.computeMesh();
+    Object obj(mesh.vertices, attributes, &mesh.indices);
 
     unsigned int projectionLoc = glGetUniformLocation(base.getShaderID(), "projection");
     unsigned int viewLoc = glGetUniformLocation(base.getShaderID(), "view");
@@ -89,7 +89,7 @@ int main()
     glm::mat4 view = glm::mat4(1.0f);
     glm::mat4 model = glm::mat4(1.0f);
 
-    model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    model = glm::rotate(model, glm::radians(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     view = glm::translate(view, glm::vec3(0.0f, 0.0f, -3.0f));
     projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
 
@@ -97,6 +97,12 @@ int main()
 
     // render loop
     // -----------
+    
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
+
+
     glEnable(GL_DEPTH_TEST);
     while (!glfwWindowShouldClose(window))
     {
@@ -123,7 +129,8 @@ int main()
         // draw our first triangle
         base.use();
         obj.bindVertexArray();
-        glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+        glDrawElements(GL_TRIANGLES, mesh.indices.size(), GL_UNSIGNED_INT, 0);
+
         // glBindVertexArray(0); // no need to unbind it every time 
  
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
@@ -144,8 +151,20 @@ void processInput(GLFWwindow *window)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
-    
-    float cameraSpeed = 2.0f * deltaTime;
+
+    // Tab toggles wireframe / fill mode on key-press (edge-detected)
+    static bool tabWasPressed = false;
+    static bool wireframe = false;
+    int tabState = glfwGetKey(window, GLFW_KEY_TAB);
+    if (tabState == GLFW_PRESS && !tabWasPressed) {
+        wireframe = !wireframe;
+        if (wireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        else glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        tabWasPressed = true;
+    }
+    if (tabState == GLFW_RELEASE) tabWasPressed = false;
+
+    float cameraSpeed = 5.0f * deltaTime;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         camera.translate(cameraSpeed * camera.getFront());
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -154,6 +173,10 @@ void processInput(GLFWwindow *window)
         camera.translate(-glm::normalize(glm::cross(camera.getFront(), camera.getUp())) * cameraSpeed);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         camera.translate(glm::normalize(glm::cross(camera.getFront(), camera.getUp())) * cameraSpeed);
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+        camera.translate(-cameraSpeed * camera.getUp());
+    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+        camera.translate(cameraSpeed * camera.getUp());
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes

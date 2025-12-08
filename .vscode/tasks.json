@@ -14,6 +14,7 @@
 				"-L${workspaceFolder}/dependencies/library/",
 				"${workspaceFolder}/source/main.cpp",
 				"${workspaceFolder}/source/glad.c",
+				"${workspaceFolder}/source/object.cpp",
 				"${workspaceFolder}/Ryder/generation.cpp",
 				"${workspaceFolder}/Jack/voxel.cpp",
 				"-lglfw3.4",
