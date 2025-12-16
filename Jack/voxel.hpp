@@ -1,71 +1,45 @@
 #pragma once
 
 #include <cstdint>
-#include <algorithm>
-#include <vector>
-#include <array>
-#include <iostream>
-#include <unordered_map>
 
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
+namespace Voxel
+{
 
+typedef uint32_t PackedVoxel;
 
-#define CHUNK_WIDTH 16
-#define CHUNK_HEIGHT 16
-#define CHUNK_DEPTH 16
-
-// uint8_t is the type used for the colors. this maybe turned into a struct if we need more voxel specific data is needed
-// add chunk specific data as needed
-
-// color id of zero should represent air/no-block
-typedef uint8_t ColorId;
-
-struct Vertex {
-    glm::vec3 position;
-    ColorId color;
-
-    Vertex(const glm::vec3& pos, ColorId col) : position(pos), color(col) {}
-
-    bool operator==(const Vertex& other) const {
-        return position == other.position && color == other.color;
-    }
+enum VoxelFace : uint8_t {
+    FRONT  = 0x00,
+    BACK   = 0x01,
+    TOP    = 0x02,
+    BOTTOM = 0x03,
+    RIGHT  = 0x04,
+    LEFT   = 0x05
 };
 
-struct Mesh {
-    std::vector<float> vertices;
-    std::vector<unsigned int> indices;
+enum VoxelColor : uint8_t {
+    EMPTY   = 0, // reserved value for "no voxel"
+    RED     = 1,
+    GREEN   = 2,
+    BLUE    = 3,
+    YELLOW  = 4,
+    MAGENTA = 5,
+    CYAN    = 6,
+    WHITE   = 7,
+    BLACK   = 8
 };
 
-struct VertexHash {
-    std::size_t operator()(const Vertex& v) const noexcept {
-        std::size_t hx = std::hash<int>()(v.position.x);
-        std::size_t hy = std::hash<int>()(v.position.y);
-        std::size_t hz = std::hash<int>()(v.position.z);
-        std::size_t c = std::hash<int>()(v.color);
+inline PackedVoxel packVertexData(int x, int y, int z, int length, int height, int colorIndex, int facing) {
+    // Mask each value to appropriate bit count
+    PackedVoxel packed = 0;
+    packed |= (x & 0xF) << 0;           // bits 0-3
+    packed |= (y & 0xF) << 4;           // bits 4-7
+    packed |= (z & 0xF) << 8;           // bits 8-11
+    packed |= (length & 0xF) << 12;     // bits 12-15
+    packed |= (height & 0xF) << 16;     // bits 16-19
+    packed |= (colorIndex & 0xF) << 20; // bits 20-23 (4 bits for color, 16 colors)
+    packed |= (facing & 0xF) << 24;    // bits 24-31 (8 bits for facing)
+    
+    return packed;
+}
 
-        // Combine the three hashes
-        std::size_t seed = hx;
-        seed ^= hy + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-        seed ^= hz + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-        seed ^= c + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-        return seed;
-    }
-};
-
-
-class Chunk {
-private:
-    std::unordered_map<Vertex, unsigned int, VertexHash> vertexMap;
-    std::vector<float> vertices;
-    std::vector<unsigned int> indices;
-    unsigned int addVertex(const Vertex& vertex);
-    void addFace(const Vertex& v0, const Vertex& v1, const Vertex& v2, const Vertex& v3);
-public:
-    glm::ivec3 global_position;
-    ColorId data[CHUNK_WIDTH][CHUNK_HEIGHT][CHUNK_DEPTH];
-
-    Chunk(glm::ivec3 position);
-    Mesh computeMesh();
-};
+}

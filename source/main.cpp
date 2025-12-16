@@ -5,12 +5,13 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "../Jack/voxel.hpp"
+
 #include "shader.hpp"
 #include "object.hpp"
+#include "ubo.hpp"
 #include "camera.hpp"
-
-#include "../Ryder/generation.hpp"
-#include "../Jack/voxel.hpp"
+#include "chunk.hpp"
 
 #include <iostream>
 
@@ -35,13 +36,9 @@ int main()
     // glfw: initialize and configure
     // ------------------------------
     glfwInit();
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    #ifdef __APPLE__
-        glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-    #endif
 
     // glfw window creation
     // --------------------
@@ -56,63 +53,78 @@ int main()
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-
-
-    // glad: load all OpenGL function pointers0.
-
-
-    // ---------------------------------------
+    // glad: load all OpenGL function pointers.
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
         std::cout << "Failed to initialize GLAD" << std::endl;
         return -1;
     }
 
+
+    std::vector<Chunk> global_chunks;
+    for (int i = 0; i < 10; ++i) {
+        glm::ivec3 position = glm::ivec3(i % 2, 0, i / 2);
+        Chunk c = Chunk(position);
+        for (int x = 0; x < CHUNK_WIDTH; ++x) {
+            for (int z = 0; z < CHUNK_DEPTH; ++z) {
+                for (int y = 0; y < CHUNK_HEIGHT; ++y) {
+                    float height_value = static_cast<int>(((glm::perlin(glm::vec2(x + c.chunkPosition.x * CHUNK_WIDTH, z + c.chunkPosition.z * CHUNK_DEPTH) * 0.1f) + 1.0f) / 2.0f) * MAX_HEIGHT);
+                    if (y + c.chunkPosition.y * CHUNK_HEIGHT <= height_value) {
+                        c.setVoxel(x, y, z, Voxel::GREEN);
+                    }
+                }
+            }
+        }
+        global_chunks.push_back(c);
+    }
+
+
+    std::vector<ChunkVertex> allVertices;
+
+    int idCounter = 0;
+    for (Chunk& c : global_chunks) {
+        std::vector<Voxel::PackedVoxel> chunkVertices = c.createMeshData();
+        for (const Voxel::PackedVoxel& pv : chunkVertices) {
+            ChunkVertex cv;
+            cv.packedData = pv;
+            cv.offsetID = idCounter;
+            allVertices.push_back(cv);
+        }
+        idCounter++;
+    }
+
+    std::vector<unsigned int> indices = {};
     std::vector<VertexAttribute> attributes = {
-        VertexAttribute(GL_FLOAT, 3, false), // position
-        VertexAttribute(GL_FLOAT, 1, false)  // color (as float for simplicity)
+        VertexAttribute(GL_UNSIGNED_INT,  1,  false), // packedData
+        VertexAttribute(GL_UNSIGNED_INT,  1,  false)  // offsetID
     };
 
-    Chunk chunk(glm::ivec3(0, 0, 0));
-    Chunk chunk2(glm::ivec3(0, 1, 0));
+    Object obj(allVertices, attributes, &indices, GL_POINTS);
 
-    genChunk(chunk);
-    genChunk(chunk2);
+    Shader base("source/base.vs","source/base.gs","source/base.fs");
 
-    Shader base("source/base.vs","source/base.fs");
-    Mesh mesh = chunk.computeMesh();
-    Mesh mesh2 = chunk2.computeMesh();
-    Object obj(mesh.vertices, attributes, &mesh.indices);
-    Object obj2(mesh2.vertices, attributes, &mesh2.indices);
+    std::vector<glm::ivec4> chunkOffsets;
+    for (const Chunk& c : global_chunks) {
+        glm::ivec3 p = c.chunkPosition;
+        chunkOffsets.push_back(glm::ivec4(p.x, p.y, p.z, 0));
+    }
+    UniformBuffer chunkOffsetUBO(sizeof(glm::ivec4) * 100, GL_STATIC_DRAW); // Binding point 0
+    chunkOffsetUBO.update(chunkOffsets);
+    chunkOffsetUBO.bindToBindingPoint(0);
+    base.setBlockBinding("ChunkOffsets", 0);
 
-    std::vector<glm::vec3> instancedPoints = {
-        glm::vec3(2.0f, 0.0f, 0.0f),
-        glm::vec3(-2.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 2.0f, 0.0f),
-        glm::vec3(0.0f, -2.0f, 0.0f)
-    };
-
-    unsigned int projectionLoc = glGetUniformLocation(base.getShaderID(), "projection");
-    unsigned int viewLoc = glGetUniformLocation(base.getShaderID(), "view");
-    unsigned int modelLoc = glGetUniformLocation(base.getShaderID(), "model");
-
-    glm::mat4 projection = glm::mat4(1.0f);
-    glm::mat4 view = glm::mat4(1.0f);
-    glm::mat4 model = glm::mat4(1.0f);
-
-    model = glm::rotate(model, glm::radians(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    view = glm::translate(view, glm::vec3(0.0f, 0.0f, -3.0f));
-    projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
-
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glm::mat4 projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+    glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -3.0f));
+    glm::mat4 model = glm::rotate(glm::mat4(1.0f), glm::radians(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
     // render loop
     // -----------
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glFrontFace(GL_CCW);
-
 
     glEnable(GL_DEPTH_TEST);
     while (!glfwWindowShouldClose(window))
@@ -121,30 +133,23 @@ int main()
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
         // input
-        // -----
         processInput(window);
 
         // render
-        // ------
+
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-        
-        //model = glm::rotate(model, (float)deltaTime * glm::radians(50.0f), glm::vec3(0.5f, 1.0f, 0.0f));
         view = camera.getViewMatrix();
-        projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+        projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 250.0f);
 
-        // draw our first triangle
+        base.setMat4("projection", projection);
+        base.setMat4("view", view);
+        base.setMat4("model", model);
+
+        // draw our cube
         base.use();
-        obj.bindVertexArray();
-        glDrawElements(GL_TRIANGLES, mesh.indices.size(), GL_UNSIGNED_INT, 0);
-        obj2.bindVertexArray();
-        glDrawElements(GL_TRIANGLES, mesh2.indices.size(), GL_UNSIGNED_INT, 0);
-
-        // glBindVertexArray(0); // no need to unbind it every time 
+        obj.draw();
  
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
         // -------------------------------------------------------------------------------
