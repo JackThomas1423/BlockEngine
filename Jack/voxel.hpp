@@ -28,16 +28,25 @@ enum VoxelColor : uint8_t {
     BLACK   = 8
 };
 
+// Optimized bit layout (32 bits total):
+// x: 4 bits (0-15)         - bits 0-3
+// y: 4 bits (0-15)         - bits 4-7
+// z: 4 bits (0-15)         - bits 8-11
+// length: 4 bits (1-16)    - bits 12-15  <- Represents 1-16, not 0-15!
+// height: 4 bits (1-16)    - bits 16-19  <- Represents 1-16, not 0-15!
+// color: 8 bits (0-255)    - bits 20-27  <- 256 possible colors!
+// facing: 3 bits (0-7)     - bits 28-30
+// (1 bit unused)           - bit 31
+
 inline PackedVoxel packVertexData(int x, int y, int z, int length, int height, int colorIndex, int facing) {
-    // Mask each value to appropriate bit count
     PackedVoxel packed = 0;
-    packed |= (x & 0xF) << 0;           // bits 0-3
-    packed |= (y & 0xF) << 4;           // bits 4-7
-    packed |= (z & 0xF) << 8;           // bits 8-11
-    packed |= (length & 0xF) << 12;     // bits 12-15
-    packed |= (height & 0xF) << 16;     // bits 16-19
-    packed |= (colorIndex & 0xF) << 20; // bits 20-23 (4 bits for color, 16 colors)
-    packed |= (facing & 0xF) << 24;    // bits 24-31 (8 bits for facing)
+    packed |= (x & 0xF) << 0;                // bits 0-3   (4 bits)
+    packed |= (y & 0xF) << 4;                // bits 4-7   (4 bits)
+    packed |= (z & 0xF) << 8;                // bits 8-11  (4 bits)
+    packed |= ((length - 1) & 0xF) << 12;    // bits 12-15 (4 bits) - subtract 1 to store 1-16 as 0-15
+    packed |= ((height - 1) & 0xF) << 16;    // bits 16-19 (4 bits) - subtract 1 to store 1-16 as 0-15
+    packed |= (colorIndex & 0xFF) << 20;     // bits 20-27 (8 bits) - 256 colors!
+    packed |= (facing & 0x7) << 28;          // bits 28-30 (3 bits)
     
     return packed;
 }

@@ -5,8 +5,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "../Jack/voxel.hpp"
-
 #include "shader.hpp"
 #include "object.hpp"
 #include "ubo.hpp"
@@ -60,30 +58,61 @@ int main()
         return -1;
     }
 
-
     std::vector<Chunk> global_chunks;
-    for (int i = 0; i < 10; ++i) {
-        glm::ivec3 position = glm::ivec3(i % 2, 0, i / 2);
-        Chunk c = Chunk(position);
-        for (int x = 0; x < CHUNK_WIDTH; ++x) {
-            for (int z = 0; z < CHUNK_DEPTH; ++z) {
-                for (int y = 0; y < CHUNK_HEIGHT; ++y) {
-                    float height_value = static_cast<int>(((glm::perlin(glm::vec2(x + c.chunkPosition.x * CHUNK_WIDTH, z + c.chunkPosition.z * CHUNK_DEPTH) * 0.1f) + 1.0f) / 2.0f) * MAX_HEIGHT);
-                    if (y + c.chunkPosition.y * CHUNK_HEIGHT <= height_value) {
-                        c.setVoxel(x, y, z, Voxel::GREEN);
+    ChunkMap chunk_map;
+
+    global_chunks.reserve(16 * 16 * 16);
+
+    for (int i = -8; i < 8; ++i) {
+        for(int j = -8; j < 8; ++j) {
+            for(int k = -8; k < 8; ++k) {
+                glm::ivec3 position = glm::ivec3(i, j, k);
+                global_chunks.emplace_back(position, &chunk_map);
+                chunk_map[position] = &global_chunks.back();
+
+                Chunk& c = global_chunks.back();
+                for (int x = 0; x < CHUNK_WIDTH; ++x) {
+                    for (int z = 0; z < CHUNK_DEPTH; ++z) {
+                        for (int y = 0; y < CHUNK_HEIGHT; ++y) {
+                            float height_value = static_cast<int>(((glm::perlin(glm::vec2(x + c.chunkPosition.x * CHUNK_WIDTH, z + c.chunkPosition.z * CHUNK_DEPTH) * 0.01f) + 1.0f) / 2.0f) * MAX_HEIGHT);
+                            if (y + c.chunkPosition.y * CHUNK_HEIGHT <= height_value) {
+                                c.setVoxel(x, y, z, Voxel::GREEN);
+                            }
+                        }
                     }
                 }
             }
         }
-        global_chunks.push_back(c);
     }
 
+    std::cout << "Testing for hash collisions..." << std::endl;
+    ChunkPositionHash hasher;
+    std::unordered_map<size_t, glm::ivec3> hashToPos;
+    int collisions = 0;
+
+    for (const auto& pair : chunk_map) {
+        glm::ivec3 pos = pair.first;
+        size_t hash = hasher(pos);
+    
+        if (hashToPos.find(hash) != hashToPos.end()) {
+            glm::ivec3 existingPos = hashToPos[hash];
+            std::cout << "COLLISION: (" << pos.x << "," << pos.y << "," << pos.z << ") and ("
+                  << existingPos.x << "," << existingPos.y << "," << existingPos.z 
+                  << ") both hash to " << hash << std::endl;
+            collisions++;
+        } else {
+            hashToPos[hash] = pos;
+        }
+    }
+
+    std::cout << "Total collisions found: " << collisions << std::endl;
 
     std::vector<ChunkVertex> allVertices;
 
-    int idCounter = 0;
+    unsigned int idCounter = 0;
     for (Chunk& c : global_chunks) {
         std::vector<Voxel::PackedVoxel> chunkVertices = c.createMeshData();
+    
         for (const Voxel::PackedVoxel& pv : chunkVertices) {
             ChunkVertex cv;
             cv.packedData = pv;
@@ -92,6 +121,12 @@ int main()
         }
         idCounter++;
     }
+
+    // Info: calculate average data per chunk
+    int avgVertices = int((float)allVertices.size() / (float)global_chunks.size());
+    std::cout << "Average vertices per chunk: " << avgVertices << std::endl;
+    std::cout << "Average of " << (avgVertices * sizeof(ChunkVertex)) << " bytes per chunk." << std::endl;
+    std::cout << "Projected memory usage: " << (avgVertices * sizeof(ChunkVertex) * chunk_map.size()) / (1024.0f * 1024.0f) << " MB for " << chunk_map.size() << " chunks." << std::endl;
 
     std::vector<unsigned int> indices = {};
     std::vector<VertexAttribute> attributes = {
@@ -108,14 +143,22 @@ int main()
         glm::ivec3 p = c.chunkPosition;
         chunkOffsets.push_back(glm::ivec4(p.x, p.y, p.z, 0));
     }
-    UniformBuffer chunkOffsetUBO(sizeof(glm::ivec4) * 100, GL_STATIC_DRAW); // Binding point 0
+
+    GLint maxUBOSize;
+    glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, &maxUBOSize);
+
+    int plannedAllocation = sizeof(glm::ivec4) * (16 * 16 * 16);
+
+    std::cout << "Max UBO size: " << maxUBOSize / 1024 << " KB" << std::endl;
+    std::cout << "Percent of max UBO used: " << (float)plannedAllocation / (float)maxUBOSize * 100.0f << " %" << std::endl;
+
+    UniformBuffer chunkOffsetUBO(plannedAllocation, GL_STATIC_DRAW); // Binding point 0
     chunkOffsetUBO.update(chunkOffsets);
     chunkOffsetUBO.bindToBindingPoint(0);
     base.setBlockBinding("ChunkOffsets", 0);
 
     glm::mat4 projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
     glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -3.0f));
-    glm::mat4 model = glm::rotate(glm::mat4(1.0f), glm::radians(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
     // render loop
     // -----------
@@ -141,11 +184,10 @@ int main()
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         view = camera.getViewMatrix();
-        projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 250.0f);
+        projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 500.0f);
 
         base.setMat4("projection", projection);
         base.setMat4("view", view);
-        base.setMat4("model", model);
 
         // draw our cube
         base.use();
@@ -182,7 +224,7 @@ void processInput(GLFWwindow *window)
     }
     if (tabState == GLFW_RELEASE) tabWasPressed = false;
 
-    float cameraSpeed = 5.0f * deltaTime;
+    float cameraSpeed = 20.0f * deltaTime;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         camera.translate(cameraSpeed * camera.getFront());
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
