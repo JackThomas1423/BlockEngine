@@ -7,40 +7,43 @@
 
 #include "shader.hpp"
 #include "object.hpp"
-#include "ubo.hpp"
 #include "camera.hpp"
+#include "voxel.hpp"
 #include "chunk.hpp"
+#include "threadPool.hpp"
+#include "frustum.hpp"
+#include "worldManager.hpp"
+#include "lodManager.hpp"
+#include "occlusionCuller.hpp"
 
 #include <iostream>
+#include <vector>
+#include <algorithm>
 
+// Settings
+const unsigned int SCR_WIDTH = 1200;
+const unsigned int SCR_HEIGHT = 900;
+
+// Global state
+Camera camera(glm::vec3(0.0f, 64.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 70.0f);
+float deltaTime = 0.0f;
+float lastFrame = 0.0f;
+OcclusionCuller* g_occlusionCuller = nullptr;
+
+// Forward declarations
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void processInput(GLFWwindow *window);
 
-// settings
-const unsigned int SCR_WIDTH = 1200;
-const unsigned int SCR_HEIGHT = 900;
-
-Camera camera(glm::vec3(0.0f, 0.0f, 3.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 70.0f);
-float lastX = SCR_WIDTH / 2.0f;
-float lastY = SCR_HEIGHT / 2.0f;
-bool firstMouse = true;
-
-float deltaTime = 0.0f;
-float lastFrame = 0.0f;
-
 int main()
 {
-    // glfw: initialize and configure
-    // ------------------------------
+    // Initialize GLFW
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    // glfw window creation
-    // --------------------
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "LearnOpenGL", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Voxel Engine - With Occlusion Culling", NULL, NULL);
     if (window == NULL)
     {
         std::cout << "Failed to create GLFW window" << std::endl;
@@ -51,168 +54,232 @@ int main()
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-    // glad: load all OpenGL function pointers.
+    
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
         std::cout << "Failed to initialize GLAD" << std::endl;
         return -1;
     }
 
-    std::vector<Chunk> global_chunks;
-    ChunkMap chunk_map;
-
-    global_chunks.reserve(16 * 16 * 16);
-
-    for (int i = -8; i < 8; ++i) {
-        for(int j = -8; j < 8; ++j) {
-            for(int k = -8; k < 8; ++k) {
-                glm::ivec3 position = glm::ivec3(i, j, k);
-                global_chunks.emplace_back(position, &chunk_map);
-                chunk_map[position] = &global_chunks.back();
-
-                Chunk& c = global_chunks.back();
-                for (int x = 0; x < CHUNK_WIDTH; ++x) {
-                    for (int z = 0; z < CHUNK_DEPTH; ++z) {
-                        for (int y = 0; y < CHUNK_HEIGHT; ++y) {
-                            float height_value = static_cast<int>(((glm::perlin(glm::vec2(x + c.chunkPosition.x * CHUNK_WIDTH, z + c.chunkPosition.z * CHUNK_DEPTH) * 0.01f) + 1.0f) / 2.0f) * MAX_HEIGHT);
-                            if (y + c.chunkPosition.y * CHUNK_HEIGHT <= height_value) {
-                                c.setVoxel(x, y, z, Voxel::GREEN);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    std::cout << "Testing for hash collisions..." << std::endl;
-    ChunkPositionHash hasher;
-    std::unordered_map<size_t, glm::ivec3> hashToPos;
-    int collisions = 0;
-
-    for (const auto& pair : chunk_map) {
-        glm::ivec3 pos = pair.first;
-        size_t hash = hasher(pos);
+    // Initialize systems
+    ThreadPool threadPool(8);
+    WorldManager worldManager(32);
+    LODManager lodManager;
+    OcclusionCuller occlusionCuller;
+    BoundingBoxRenderer bboxRenderer;
     
-        if (hashToPos.find(hash) != hashToPos.end()) {
-            glm::ivec3 existingPos = hashToPos[hash];
-            std::cout << "COLLISION: (" << pos.x << "," << pos.y << "," << pos.z << ") and ("
-                  << existingPos.x << "," << existingPos.y << "," << existingPos.z 
-                  << ") both hash to " << hash << std::endl;
-            collisions++;
-        } else {
-            hashToPos[hash] = pos;
-        }
-    }
+    // Set global pointer for keyboard toggle
+    g_occlusionCuller = &occlusionCuller;
 
-    std::cout << "Total collisions found: " << collisions << std::endl;
-
-    std::vector<ChunkVertex> allVertices;
-
-    unsigned int idCounter = 0;
-    for (Chunk& c : global_chunks) {
-        std::vector<Voxel::PackedVoxel> chunkVertices = c.createMeshData();
-    
-        for (const Voxel::PackedVoxel& pv : chunkVertices) {
-            ChunkVertex cv;
-            cv.packedData = pv;
-            cv.offsetID = idCounter;
-            allVertices.push_back(cv);
-        }
-        idCounter++;
-    }
-
-    // Info: calculate average data per chunk
-    int avgVertices = int((float)allVertices.size() / (float)global_chunks.size());
-    std::cout << "Average vertices per chunk: " << avgVertices << std::endl;
-    std::cout << "Average of " << (avgVertices * sizeof(ChunkVertex)) << " bytes per chunk." << std::endl;
-    std::cout << "Projected memory usage: " << (avgVertices * sizeof(ChunkVertex) * chunk_map.size()) / (1024.0f * 1024.0f) << " MB for " << chunk_map.size() << " chunks." << std::endl;
-
+    // Setup OpenGL objects
     std::vector<unsigned int> indices = {};
     std::vector<VertexAttribute> attributes = {
-        VertexAttribute(GL_UNSIGNED_INT,  1,  false), // packedData
-        VertexAttribute(GL_UNSIGNED_INT,  1,  false)  // offsetID
+        VertexAttribute(GL_UNSIGNED_INT, 1, false),
+        VertexAttribute(GL_UNSIGNED_INT, 1, false)
     };
 
-    Object obj(allVertices, attributes, &indices, GL_POINTS);
+    std::vector<ChunkVertex> initialVertices;
+    Object obj(initialVertices, attributes, &indices, GL_POINTS);
 
-    Shader base("source/base.vs","source/base.gs","source/base.fs");
+    Shader baseShader("source/base.vs", "source/base.gs", "source/base.fs");
 
-    std::vector<glm::ivec4> chunkOffsets;
-    for (const Chunk& c : global_chunks) {
-        glm::ivec3 p = c.chunkPosition;
-        chunkOffsets.push_back(glm::ivec4(p.x, p.y, p.z, 0));
-    }
-
-    GLint maxUBOSize;
-    glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, &maxUBOSize);
-
-    int plannedAllocation = sizeof(glm::ivec4) * (16 * 16 * 16);
-
-    std::cout << "Max UBO size: " << maxUBOSize / 1024 << " KB" << std::endl;
-    std::cout << "Percent of max UBO used: " << (float)plannedAllocation / (float)maxUBOSize * 100.0f << " %" << std::endl;
-
-    UniformBuffer chunkOffsetUBO(plannedAllocation, GL_STATIC_DRAW); // Binding point 0
-    chunkOffsetUBO.update(chunkOffsets);
-    chunkOffsetUBO.bindToBindingPoint(0);
-    base.setBlockBinding("ChunkOffsets", 0);
-
-    glm::mat4 projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
-    glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -3.0f));
-
-    // render loop
-    // -----------
-
+    // OpenGL state
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glFrontFace(GL_CCW);
-
     glEnable(GL_DEPTH_TEST);
+    
+    // Create frustum for culling
+    Frustum frustum;
+    
+    std::cout << "Window opened! Chunks will stream in around you..." << std::endl;
+    std::cout << "Controls:" << std::endl;
+    std::cout << "  WASD - Move horizontally" << std::endl;
+    std::cout << "  QE - Move up/down" << std::endl;
+    std::cout << "  TAB - Toggle wireframe" << std::endl;
+    std::cout << "  O - Toggle occlusion culling" << std::endl;
+    std::cout << "  ESC - Exit" << std::endl;
+
+    // Start world management thread
+    worldManager.start(&threadPool);
+
+    // Stats tracking
+    int frameCount = 0;
+    float lastInfoTime = 0.0f;
+    int chunksRendered = 0;
+    int chunksCulled = 0;
+
+    // Main render loop
     while (!glfwWindowShouldClose(window))
     {
         float currentFrame = static_cast<float>(glfwGetTime());
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
-        // input
+        
         processInput(window);
 
-        // render
-
+        // Clear screen
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        view = camera.getViewMatrix();
-        projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 500.0f);
+        // Update camera matrices
+        glm::mat4 view = camera.getViewMatrix();
+        glm::mat4 projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 10000.0f);
 
-        base.setMat4("projection", projection);
-        base.setMat4("view", view);
+        // Update frustum
+        glm::mat4 projectionView = projection * view;
+        frustum.update(projectionView);
 
-        // draw our cube
-        base.use();
-        obj.draw();
+        // Update world manager with camera position
+        glm::vec3 cameraPos = camera.getPosition();
+        worldManager.updateCameraPosition(cameraPos);
+
+        // Begin occlusion testing for this frame
+        occlusionCuller.beginFrame();
+
+        // PASS 1: Frustum culling and collect potentially visible chunks
+        std::vector<Chunk*> potentiallyVisibleChunks;
+        chunksCulled = 0;
+
+        {
+            std::lock_guard<std::mutex> lock(worldManager.getChunkMapMutex());
+            ChunkMap& chunkMap = worldManager.getChunkMap();
+            
+            for (auto& pair : chunkMap) {
+                Chunk* chunk = pair.second;
+                glm::vec3 chunkWorldPos = glm::vec3(chunk->chunkPosition) * 16.0f;
+                
+                // Frustum culling (fast CPU test)
+                if (!frustum.isChunkVisible(chunkWorldPos, 16.0f)) {
+                    chunksCulled++;
+                    continue;
+                }
+                
+                potentiallyVisibleChunks.push_back(chunk);
+            }
+        }
+
+        // Sort front-to-back for better occlusion
+        std::sort(potentiallyVisibleChunks.begin(), potentiallyVisibleChunks.end(),
+            [&cameraPos](Chunk* a, Chunk* b) {
+                glm::vec3 posA = glm::vec3(a->chunkPosition) * 16.0f + glm::vec3(8.0f);
+                glm::vec3 posB = glm::vec3(b->chunkPosition) * 16.0f + glm::vec3(8.0f);
+                float distA = glm::distance(posA,cameraPos);
+                float distB = glm::distance(posB,cameraPos);
+                return distA > distB;
+            });
+
+        // PASS 2: Render visible chunks based on PREVIOUS frame's occlusion results
+        std::vector<ChunkVertex> frameVertices;
+        frameVertices.reserve(10000);
+        
+        chunksRendered = 0;
+
+        // Set shader uniforms for voxel rendering
+        baseShader.use();
+        baseShader.setMat4("projection", projection);
+        baseShader.setMat4("view", view);
+
+        // Collect visible chunks and their geometry
+        for (Chunk* chunk : potentiallyVisibleChunks) {
+            glm::vec3 chunkWorldPos = glm::vec3(chunk->chunkPosition) * 16.0f;
+            
+            // Test visibility using PREVIOUS frame's results
+            bool isVisible = occlusionCuller.testChunkVisibility(chunk, chunkWorldPos);
+            
+            if (!isVisible) {
+                continue;
+            }
+            
+            chunksRendered++;
+            
+            // Calculate and update LOD
+            LODLevel newLOD = lodManager.calculateLOD(chunkWorldPos, cameraPos, chunk->getLODLevel());
+            
+            if (newLOD != chunk->getLODLevel()) {
+                chunk->setLODLevel(newLOD);
+            }
+    
+            // Get mesh data for current LOD
+            const std::vector<Voxel::PackedVoxel>& chunkVertices = chunk->getMeshData(newLOD);
+    
+            // Pack vertices for rendering
+            for (const Voxel::PackedVoxel& pv : chunkVertices) {
+                ChunkVertex cv;
+                cv.packedData = pv;
+                cv.chunkOffset = packChunkOffset(chunk->chunkPosition, chunk->currentLOD);
+                frameVertices.push_back(cv);
+            }
+        }
+
+        // Render all visible chunks - this builds the depth buffer
+        if (!frameVertices.empty()) {
+            obj.bindVertices(frameVertices.data(), frameVertices.size() * sizeof(ChunkVertex), GL_DYNAMIC_DRAW);
+            obj.vertexCount = frameVertices.size();
+            obj.draw();
+        }
+
+        // PASS 3: Now test occlusion queries for NEXT frame using the depth buffer we just built
+        // Disable color writes and depth writes - only test against existing depth
+        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+        glDepthMask(GL_FALSE);
+        glDepthFunc(GL_LEQUAL);  // Test against existing depth
+        
+        for (Chunk* chunk : potentiallyVisibleChunks) {
+            glm::vec3 chunkWorldPos = glm::vec3(chunk->chunkPosition) * 16.0f;
+            
+            // Submit query for next frame (tests against current depth buffer)
+            occlusionCuller.submitOcclusionQuery(chunk, chunkWorldPos, projectionView, &bboxRenderer);
+        }
+        
+        // Restore state
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        glDepthMask(GL_TRUE);
+        glDepthFunc(GL_LESS);
+
+        // End occlusion testing
+        occlusionCuller.endFrame();
+
+        // Print stats every second
+        if (currentFrame - lastInfoTime > 1.0f) {
+            lastInfoTime = currentFrame;
+            std::cout << "FPS: " << (1.0f / deltaTime) 
+                      << " | Chunks loaded: " << worldManager.getLoadedChunkCount()
+                      << " | Rendered: " << chunksRendered
+                      << " | Frustum culled: " << chunksCulled
+                      << " | Occlusion culled: " << occlusionCuller.getCulledChunks()
+                      << " | Occlusion queries: " << occlusionCuller.getQueriesThisFrame()
+                      << " | Vertices: " << frameVertices.size() 
+                      << " | OC: " << (occlusionCuller.isEnabled() ? "ON" : "OFF")
+                      << std::endl;
+        }
+        frameCount++;
+
+        // Render all visible chunks
+        if (!frameVertices.empty()) {
+            obj.bindVertices(frameVertices.data(), frameVertices.size() * sizeof(ChunkVertex), GL_DYNAMIC_DRAW);
+            obj.vertexCount = frameVertices.size();
+            obj.draw();
+        }
  
-        // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
-        // -------------------------------------------------------------------------------
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
     
-    // glfw: terminate, clearing all previously allocated GLFW resources.
-    // ------------------------------------------------------------------
+    // Cleanup
+    worldManager.stop();
+    
     glfwTerminate();
     return 0;
 }
 
-// process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
-// ---------------------------------------------------------------------------------------------------------
 void processInput(GLFWwindow *window)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    // Tab toggles wireframe / fill mode on key-press (edge-detected)
+    // Toggle wireframe mode
     static bool tabWasPressed = false;
     static bool wireframe = false;
     int tabState = glfwGetKey(window, GLFW_KEY_TAB);
@@ -224,7 +291,20 @@ void processInput(GLFWwindow *window)
     }
     if (tabState == GLFW_RELEASE) tabWasPressed = false;
 
-    float cameraSpeed = 20.0f * deltaTime;
+    // Toggle occlusion culling
+    static bool oWasPressed = false;
+    
+    int oState = glfwGetKey(window, GLFW_KEY_O);
+    if (oState == GLFW_PRESS && !oWasPressed && g_occlusionCuller) {
+        bool enabled = !g_occlusionCuller->isEnabled();
+        g_occlusionCuller->setEnabled(enabled);
+        std::cout << "Occlusion culling: " << (enabled ? "ON" : "OFF") << std::endl;
+        oWasPressed = true;
+    }
+    if (oState == GLFW_RELEASE) oWasPressed = false;
+
+    // Camera movement
+    float cameraSpeed = 50.0f * deltaTime;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         camera.translate(cameraSpeed * camera.getFront());
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -239,18 +319,11 @@ void processInput(GLFWwindow *window)
         camera.translate(cameraSpeed * camera.getUp());
 }
 
-// glfw: whenever the window size changed (by OS or user resize) this callback function executes
-// ---------------------------------------------------------------------------------------------
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
-    // make sure the viewport matches the new window dimensions; note that width and 
-    // height will be significantly larger than specified on retina displays.
     glViewport(0, 0, width, height);
 }
 
-
-// glfw: whenever the mouse moves, this callback is called
-// -------------------------------------------------------
 void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 {
     static bool firstMouse = true;
@@ -265,7 +338,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     }
 
     float xoffset = xpos - lastX;
-    float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+    float yoffset = lastY - ypos;
 
     lastX = xpos;
     lastY = ypos;
@@ -274,10 +347,10 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     xoffset *= sensitivity;
     yoffset *= sensitivity;
 
-    static float yaw   = -90.0f; // yaw is initialized to -90.0 degrees
+    static float yaw = -90.0f;
     static float pitch = 0.0f;
 
-    yaw   += xoffset;
+    yaw += xoffset;
     pitch += yoffset;
 
     if (pitch > 89.0f)

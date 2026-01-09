@@ -1,10 +1,6 @@
 #version 410 core
 layout (location = 0) in uint packedData;
-layout (location = 1) in uint offsetID;
-
-layout(std140) uniform ChunkOffsets {
-  ivec4 offsets[16 * 16 * 16];
-};
+layout (location = 1) in uint packedChunkPosition;
 
 uniform mat4 view;
 uniform mat4 projection;
@@ -14,6 +10,7 @@ out VS_OUT {
   int height;
   int face;
   int color;
+  int lod;
 } vs_out;
 
 // Optimized bit layout:
@@ -25,13 +22,18 @@ out VS_OUT {
 // color: 8 bits (0-255)    - bits 20-27
 // facing: 3 bits (0-7)     - bits 28-30
 
-#define GET_X(packed) (((packed) >> 0u) & 0xFu)
-#define GET_Y(packed) (((packed) >> 4u) & 0xFu)
-#define GET_Z(packed) (((packed) >> 8u) & 0xFu)
-#define GET_LENGTH(packed) ((((packed) >> 12u) & 0xFu) + 1u)  // Add 1 to get 1-16 range
-#define GET_HEIGHT(packed) ((((packed) >> 16u) & 0xFu) + 1u)  // Add 1 to get 1-16 range
-#define GET_COLOR(packed) (((packed) >> 20u) & 0xFFu)
-#define GET_FACING(packed) (((packed) >> 28u) & 0x7u)
+#define GET_X(packed)        (((packed) >> 0u) & 0xFu)
+#define GET_Y(packed)        (((packed) >> 4u) & 0xFu)
+#define GET_Z(packed)        (((packed) >> 8u) & 0xFu)
+#define GET_LENGTH(packed)   ((((packed) >> 12u) & 0xFu) + 1u)  // Add 1 to get 1-16 range
+#define GET_HEIGHT(packed)   ((((packed) >> 16u) & 0xFu) + 1u)  // Add 1 to get 1-16 range
+#define GET_COLOR(packed)    (((packed) >> 20u) & 0xFFu)
+#define GET_FACING(packed)   (((packed) >> 28u) & 0x7u)
+
+#define GET_CHUNK_X(packed)   (((packed) >> 0u) & 0xFFu) - 128
+#define GET_CHUNK_Y(packed)   (((packed) >> 8u) & 0xFFu) - 128
+#define GET_CHUNK_Z(packed)   (((packed) >> 16u) & 0xFFu) - 128
+#define GET_CHUNK_LOD(packed) (((packed) >> 24u) & 0xFFu) - 128
 
 void main() {
     int x = int(GET_X(packedData));
@@ -42,12 +44,13 @@ void main() {
     int color = int(GET_COLOR(packedData));
     int face = int(GET_FACING(packedData));
 
-    vec3 voxelPosition = vec3(x, y, z);
-    vec3 worldPosition = voxelPosition + (offsets[offsetID].xyz * ivec3(16, 16, 16));
+    ivec3 chunkOffset = ivec3(GET_CHUNK_X(packedChunkPosition), GET_CHUNK_Y(packedChunkPosition), GET_CHUNK_Z(packedChunkPosition)) * ivec3(16,16,16);
+    vec3 worldPosition = vec3(x, y, z) + chunkOffset;
 
     gl_Position = vec4(worldPosition, 1.0);
     vs_out.color = color;
     vs_out.face = face;
     vs_out.length = length;
     vs_out.height = height;
+    vs_out.lod = int(GET_CHUNK_LOD(packedChunkPosition));
 }

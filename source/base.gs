@@ -10,6 +10,7 @@ in VS_OUT {
     int height;  // This is the greedy mesh "height" (expansion along u axis)
     int face;
     int color;
+    int lod;
 } gs_in[];
 
 flat out int fsColor;
@@ -49,23 +50,24 @@ void main() {
     int face = gs_in[0].face;
     
     vec3 scale = vec3(1.0);
+    float lod_scale = pow(2,gs_in[0].lod) + 1.0;
     
     // Face ordering: FRONT=0, BACK=1, TOP=2, BOTTOM=3, RIGHT=4, LEFT=5
     // For each face: d=depth axis, u=height axis, v=length axis
     if (face == 0 || face == 1) {
         // FRONT/BACK: d=2(Z), u=0(X), v=1(Y)
         // height expands in u(X), length expands in v(Y)
-        scale = vec3(heightU, lengthV, 1.0);
+        scale = vec3(heightU, lengthV, lod_scale - 1.0);
         fsColor = 1;
     } else if (face == 2 || face == 3) {
         // TOP/BOTTOM: d=1(Y), u=0(X), v=2(Z)
         // height expands in u(X), length expands in v(Z)
-        scale = vec3(heightU, 1.0, lengthV);
+        scale = vec3(heightU, lod_scale - 1.0, lengthV);
         fsColor = 2;
     } else {
         // LEFT/RIGHT: d=0(X), u=1(Y), v=2(Z)
         // height expands in u(Y), length expands in v(Z)
-        scale = vec3(1.0, heightU, lengthV);
+        scale = vec3(lod_scale - 1.0, heightU, lengthV);
         fsColor = 3;
     }
 
@@ -74,9 +76,9 @@ void main() {
     // 1. Scale it by the mesh dimensions
     // 2. Shift it so it starts at basePos (which is the corner, not center)
     for (int i = 0; i < 4; i++) {
-        vec3 localVertex = cubeFaces[index + i];
+        vec3 localVertex = cubeFaces[index + i] + 0.5;
         // Scale and shift: multiply by scale, add 0.5 to get [0,1] range, then add basePos
-        vec3 worldVertex = basePos + (localVertex + 0.5) * scale;
+        vec3 worldVertex = basePos + localVertex * scale;
         gl_Position = pv * vec4(worldVertex, 1.0);
         EmitVertex();
     }
