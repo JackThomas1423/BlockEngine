@@ -9,7 +9,7 @@ struct Plane {
     
     Plane() : normal(0.0f), distance(0.0f) {}
     
-    float distanceToPoint(const glm::vec3& point) const {
+    inline float distanceToPoint(const glm::vec3& point) const {
         return glm::dot(normal, point) + distance;
     }
 };
@@ -73,27 +73,101 @@ public:
         }
     }
     
-    // Test if an AABB (axis-aligned bounding box) is inside or intersecting the frustum
-    bool isBoxVisible(const glm::vec3& minPoint, const glm::vec3& maxPoint) const {
-        for (int i = 0; i < 6; i++) {
-            // Get positive vertex (the one furthest in the direction of the plane normal)
-            glm::vec3 positiveVertex = minPoint;
-            if (planes[i].normal.x >= 0) positiveVertex.x = maxPoint.x;
-            if (planes[i].normal.y >= 0) positiveVertex.y = maxPoint.y;
-            if (planes[i].normal.z >= 0) positiveVertex.z = maxPoint.z;
+    // Optimized AABB test with early-out
+    inline bool isBoxVisible(const glm::vec3& minPoint, const glm::vec3& maxPoint) const {
+        // Test against each plane
+        // Most chunks fail on near/far planes first, so test those early
+        for (int i : {NEAR, FAR, LEFT, RIGHT, TOP, BOTTOM}) {
+            const Plane& plane = planes[i];
             
-            // If the positive vertex is outside this plane, the box is outside the frustum
-            if (planes[i].distanceToPoint(positiveVertex) < 0) {
+            // Get positive vertex (furthest in direction of plane normal)
+            // Using direct comparisons instead of conditionals for branch prediction
+            glm::vec3 positiveVertex;
+            positiveVertex.x = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
+            positiveVertex.y = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
+            positiveVertex.z = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
+            
+            // Early out if outside this plane
+            if (plane.distanceToPoint(positiveVertex) < 0) {
                 return false;
             }
         }
         return true;
     }
     
-    // Overload for chunk position (assuming 16x16x16 chunk size)
-    bool isChunkVisible(const glm::vec3& chunkWorldPos, float chunkSize = 16.0f) const {
-        glm::vec3 minPoint = chunkWorldPos;
-        glm::vec3 maxPoint = chunkWorldPos + glm::vec3(chunkSize);
-        return isBoxVisible(minPoint, maxPoint);
+    // Optimized chunk visibility test
+    inline bool isChunkVisible(const glm::vec3& chunkWorldPos, float chunkSize = 16.0f) const {
+        // Pre-compute min/max once
+        const glm::vec3 minPoint = chunkWorldPos;
+        const glm::vec3 maxPoint = chunkWorldPos + chunkSize;
+        
+        // Unrolled loop for better performance - test most discriminating planes first
+        // Near plane (most chunks fail here)
+        {
+            const Plane& plane = planes[NEAR];
+            float px = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
+            float py = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
+            float pz = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
+            if (plane.normal.x * px + plane.normal.y * py + plane.normal.z * pz + plane.distance < 0) {
+                return false;
+            }
+        }
+        
+        // Far plane
+        {
+            const Plane& plane = planes[FAR];
+            float px = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
+            float py = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
+            float pz = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
+            if (plane.normal.x * px + plane.normal.y * py + plane.normal.z * pz + plane.distance < 0) {
+                return false;
+            }
+        }
+        
+        // Left plane
+        {
+            const Plane& plane = planes[LEFT];
+            float px = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
+            float py = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
+            float pz = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
+            if (plane.normal.x * px + plane.normal.y * py + plane.normal.z * pz + plane.distance < 0) {
+                return false;
+            }
+        }
+        
+        // Right plane
+        {
+            const Plane& plane = planes[RIGHT];
+            float px = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
+            float py = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
+            float pz = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
+            if (plane.normal.x * px + plane.normal.y * py + plane.normal.z * pz + plane.distance < 0) {
+                return false;
+            }
+        }
+        
+        // Top plane
+        {
+            const Plane& plane = planes[TOP];
+            float px = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
+            float py = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
+            float pz = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
+            if (plane.normal.x * px + plane.normal.y * py + plane.normal.z * pz + plane.distance < 0) {
+                return false;
+            }
+        }
+        
+        // Bottom plane
+        {
+            const Plane& plane = planes[BOTTOM];
+            float px = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
+            float py = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
+            float pz = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
+            if (plane.normal.x * px + plane.normal.y * py + plane.normal.z * pz + plane.distance < 0) {
+                return false;
+            }
+        }
+        
+        return true;
     }
 };

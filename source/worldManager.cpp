@@ -32,8 +32,13 @@ void WorldManager::updateCameraPosition(const glm::vec3& cameraPosition) {
     currentCameraPosition = cameraPosition;
 }
 
+glm::vec3 WorldManager::getCurrentCameraPosition() const {
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(cameraPosMutex));
+    return currentCameraPosition;
+}
+
 void WorldManager::gameLoop() {
-    const float UPDATE_INTERVAL = 0.05f;
+    const float UPDATE_INTERVAL = 0.01f;
     auto lastUpdateTime = std::chrono::high_resolution_clock::now();
     
     while (running) {
@@ -57,6 +62,7 @@ void WorldManager::gameLoop() {
             );
             
             unloadDistantChunks(cameraChunk);
+            pruneOutOfRangeLoadingChunks(cameraChunk);
             queueChunksForLoading(cameraChunk, cameraPos);
         }
         
@@ -67,7 +73,7 @@ void WorldManager::gameLoop() {
 void WorldManager::unloadDistantChunks(const glm::ivec3& cameraChunk) {
     std::vector<glm::ivec3> chunksToUnload;
     {
-        std::lock_guard<std::mutex> lock(chunk_map_mutex);
+        std::lock_guard<std::shared_mutex> lock(chunk_map_mutex);
         for (auto& pair : chunk_map) {
             glm::ivec3 chunkPos = pair.first;
             glm::ivec3 diff = chunkPos - cameraChunk;
@@ -83,7 +89,7 @@ void WorldManager::unloadDistantChunks(const glm::ivec3& cameraChunk) {
     }
     
     for (const auto& pos : chunksToUnload) {
-        std::lock_guard<std::mutex> lock(chunk_map_mutex);
+        std::lock_guard<std::shared_mutex> lock(chunk_map_mutex);
         auto it = chunk_map.find(pos);
         if (it != chunk_map.end()) {
             delete it->second;
@@ -92,42 +98,81 @@ void WorldManager::unloadDistantChunks(const glm::ivec3& cameraChunk) {
         
         std::lock_guard<std::mutex> loadLock(loadingMutex);
         chunksLoaded.erase(pos);
+        chunksProcessed.erase(pos);
     }
     
-    if (!chunksToUnload.empty()) {
+    /*if (!chunksToUnload.empty()) {
         std::cout << "Unloaded " << chunksToUnload.size() << " chunks" << std::endl;
+    }*/
+}
+
+void WorldManager::pruneOutOfRangeLoadingChunks(const glm::ivec3& cameraChunk) {
+    std::vector<glm::ivec3> chunksToPrune;
+    
+    {
+        std::lock_guard<std::mutex> lock(loadingMutex);
+        for (const auto& chunkPos : chunksLoading) {
+            glm::ivec3 diff = chunkPos - cameraChunk;
+            int horizontalDist = std::max(std::abs(diff.x), std::abs(diff.z));
+            
+            if (horizontalDist > RENDER_DISTANCE + 2 || 
+                chunkPos.y < cameraChunk.y - 4 - 2 || 
+                chunkPos.y > cameraChunk.y + 7 + 2) {
+                chunksToPrune.push_back(chunkPos);
+            }
+        }
+        
+        for (const auto& pos : chunksToPrune) {
+            chunksLoading.erase(pos);
+            chunksProcessed.insert(pos); // Mark as processed so it won't be re-queued
+        }
+    }
+    
+    if (!chunksToPrune.empty()) {
+        std::cout << "Pruned " << chunksToPrune.size() << " out-of-range chunks from loading queue" << std::endl;
     }
 }
 
 void WorldManager::queueChunksForLoading(const glm::ivec3& cameraChunk, const glm::vec3& cameraPos) {
     std::vector<ChunkLoadTask> tasksToLoad;
     int maxTerrainChunkY = (MAX_HEIGHT / CHUNK_HEIGHT) + 1;
-    
+
+    int totalQueued = 0;
     for (int x = -RENDER_DISTANCE; x <= RENDER_DISTANCE; ++x) {
         for (int y = -4; y <= 7; ++y) {
             for (int z = -RENDER_DISTANCE; z <= RENDER_DISTANCE; ++z) {
                 glm::ivec3 chunkPos = cameraChunk + glm::ivec3(x, y, z);
-                
+
+                // Skip if above max terrain height
                 if (chunkPos.y > maxTerrainChunkY) continue;
-                
+
                 {
                     std::lock_guard<std::mutex> lock(loadingMutex);
-                    if (chunksLoaded.count(chunkPos) > 0 || 
-                        chunksLoading.count(chunkPos) > 0) {
-                        continue;
+                    // Ensure no duplicates are added by checking both loading and loaded sets
+                    if (chunksProcessed.find(chunkPos) != chunksProcessed.end()) {
+                        continue; // Already processed (loaded, empty, or skipped)
                     }
+                    if (chunksLoading.find(chunkPos) != chunksLoading.end()) {
+                        continue; // Already in the loading queue
+                    }
+
+                    // Add to loading queue only if not already present
                     chunksLoading.insert(chunkPos);
                 }
-                
-                glm::vec3 chunkWorldPos = glm::vec3(chunkPos) * 16.0f + glm::vec3(8.0f);
-                float distance = glm::length(chunkWorldPos - cameraPos);
-                tasksToLoad.push_back({chunkPos, distance});
+
+                tasksToLoad.push_back({chunkPos});
+                totalQueued++;
             }
         }
     }
-    
-    std::sort(tasksToLoad.begin(), tasksToLoad.end());
-    
+    if (totalQueued == 0) return;
+
+    // Sort by distance at queue time (initial sorting)
+    std::sort(tasksToLoad.begin(), tasksToLoad.end(), 
+        [&cameraPos](const ChunkLoadTask& a, const ChunkLoadTask& b) {
+            return a.getDistance(cameraPos) < b.getDistance(cameraPos);
+        });
+
     size_t tasksSubmitted = 0;
     for (const auto& task : tasksToLoad) {
         if (pendingTaskCount >= MAX_PENDING_TASKS) {
@@ -135,14 +180,39 @@ void WorldManager::queueChunksForLoading(const glm::ivec3& cameraChunk, const gl
             chunksLoading.erase(task.position);
             continue;
         }
-        
+
         pendingTaskCount++;
         tasksSubmitted++;
-        
+
         pool->enqueue([task, this]() {
+            // Dynamically check distance at execution time
+            glm::vec3 currentCamPos = getCurrentCameraPosition();
+            
+            // Optional: Skip if chunk is now too far away
+            glm::ivec3 currentCameraChunk = glm::ivec3(
+                floor(currentCamPos.x / 16.0f),
+                floor(currentCamPos.y / 16.0f),
+                floor(currentCamPos.z / 16.0f)
+            );
+            glm::ivec3 diff = task.position - currentCameraChunk;
+            int horizontalDist = std::max(std::abs(diff.x), std::abs(diff.z));
+            
+            if (horizontalDist > RENDER_DISTANCE + 2 || 
+                task.position.y < currentCameraChunk.y - 4 - 2 || 
+                task.position.y > currentCameraChunk.y + 7 + 2) {
+                // Chunk is now out of range, skip generation
+                {
+                    std::lock_guard<std::mutex> lock(loadingMutex);
+                    chunksLoading.erase(task.position);
+                    chunksProcessed.insert(task.position); // Mark as processed so it won't be re-queued
+                }
+                pendingTaskCount--;
+                return;
+            }
+            
             Chunk* chunk = new Chunk(task.position, nullptr);
             bool isEmpty = true;
-            
+
             // Terrain generation
             int heightMap[CHUNK_WIDTH][CHUNK_DEPTH];
             for (int x = 0; x < CHUNK_WIDTH; ++x) {
@@ -153,7 +223,7 @@ void WorldManager::queueChunksForLoading(const glm::ivec3& cameraChunk, const gl
                     heightMap[x][z] = static_cast<int>(((perlinValue + 1.0f) / 2.0f) * MAX_HEIGHT);
                 }
             }
-        
+
             for (int x = 0; x < CHUNK_WIDTH; ++x) {
                 for (int z = 0; z < CHUNK_DEPTH; ++z) {
                     int height = heightMap[x][z];
@@ -172,30 +242,32 @@ void WorldManager::queueChunksForLoading(const glm::ivec3& cameraChunk, const gl
                 {
                     std::lock_guard<std::mutex> lock(loadingMutex);
                     chunksLoading.erase(task.position);
+                    chunksProcessed.insert(task.position); // Mark as processed so it won't be re-queued
                 }
                 pendingTaskCount--;
                 delete chunk;
                 return;
             }
-            
+
             {
-                std::lock_guard<std::mutex> lock(chunk_map_mutex);
+                std::lock_guard<std::shared_mutex> lock(chunk_map_mutex);
                 chunk_map[task.position] = chunk;
                 chunk->map_ptr = &chunk_map;
             }
-            
+
             chunk->createMeshData();
-            
+
             {
                 std::lock_guard<std::mutex> lock(loadingMutex);
                 chunksLoading.erase(task.position);
                 chunksLoaded.insert(task.position);
+                chunksProcessed.insert(task.position); // Mark as processed
             }
-            
+
             pendingTaskCount--;
         });
     }
-    
+
     if (tasksSubmitted > 0 && tasksSubmitted < tasksToLoad.size()) {
         std::cout << "Queue limited: submitted " << tasksSubmitted 
                   << " of " << tasksToLoad.size() << " pending chunks" << std::endl;

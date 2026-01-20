@@ -14,7 +14,6 @@
 #include "frustum.hpp"
 #include "worldManager.hpp"
 #include "lodManager.hpp"
-#include "occlusionCuller.hpp"
 
 #include <iostream>
 #include <vector>
@@ -28,7 +27,6 @@ const unsigned int SCR_HEIGHT = 900;
 Camera camera(glm::vec3(0.0f, 64.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 70.0f);
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
-OcclusionCuller* g_occlusionCuller = nullptr;
 
 // Forward declarations
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
@@ -43,7 +41,7 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Voxel Engine - With Occlusion Culling", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Voxel Engine", NULL, NULL);
     if (window == NULL)
     {
         std::cout << "Failed to create GLFW window" << std::endl;
@@ -62,14 +60,9 @@ int main()
     }
 
     // Initialize systems
-    ThreadPool threadPool(8);
-    WorldManager worldManager(32);
+    ThreadPool threadPool(6);
+    WorldManager worldManager(64);
     LODManager lodManager;
-    OcclusionCuller occlusionCuller;
-    BoundingBoxRenderer bboxRenderer;
-    
-    // Set global pointer for keyboard toggle
-    g_occlusionCuller = &occlusionCuller;
 
     // Setup OpenGL objects
     std::vector<unsigned int> indices = {};
@@ -98,14 +91,13 @@ int main()
     std::cout << "  WASD - Move horizontally" << std::endl;
     std::cout << "  QE - Move up/down" << std::endl;
     std::cout << "  TAB - Toggle wireframe" << std::endl;
-    std::cout << "  O - Toggle occlusion culling" << std::endl;
     std::cout << "  ESC - Exit" << std::endl;
 
     // Start world management thread
     worldManager.start(&threadPool);
 
     // Stats tracking
-    int frameCount = 0;
+    //int frameCount = 0;
     float lastInfoTime = 0.0f;
     int chunksRendered = 0;
     int chunksCulled = 0;
@@ -135,133 +127,100 @@ int main()
         glm::vec3 cameraPos = camera.getPosition();
         worldManager.updateCameraPosition(cameraPos);
 
-        // Begin occlusion testing for this frame
-        occlusionCuller.beginFrame();
-
-        // PASS 1: Frustum culling and collect potentially visible chunks
-        std::vector<Chunk*> potentiallyVisibleChunks;
+        // Pre-allocate vertex buffer
+        std::vector<ChunkVertex> frameVertices;
+        frameVertices.reserve(10000);
+        
+        chunksRendered = 0;
         chunksCulled = 0;
 
+        // Set shader uniforms once
+        baseShader.use();
+        baseShader.setMat4("projection", projection);
+        baseShader.setMat4("view", view);
+
+        static float totalCopyTime = 0.0f;
+        static float lockTime = 0.0f;
+        
+        // Process chunks directly without copying the entire map
         {
-            std::lock_guard<std::mutex> lock(worldManager.getChunkMapMutex());
+            auto lockStart = std::chrono::high_resolution_clock::now();
+            std::shared_lock<std::shared_mutex> lock(worldManager.getChunkMapMutex());
+            auto lockEnd = std::chrono::high_resolution_clock::now();
+            lockTime += std::chrono::duration<float, std::milli>(lockEnd - lockStart).count();
+            
             ChunkMap& chunkMap = worldManager.getChunkMap();
             
             for (auto& pair : chunkMap) {
                 Chunk* chunk = pair.second;
                 glm::vec3 chunkWorldPos = glm::vec3(chunk->chunkPosition) * 16.0f;
                 
-                // Frustum culling (fast CPU test)
                 if (!frustum.isChunkVisible(chunkWorldPos, 16.0f)) {
                     chunksCulled++;
                     continue;
                 }
-                
-                potentiallyVisibleChunks.push_back(chunk);
-            }
-        }
 
-        // Sort front-to-back for better occlusion
-        std::sort(potentiallyVisibleChunks.begin(), potentiallyVisibleChunks.end(),
-            [&cameraPos](Chunk* a, Chunk* b) {
-                glm::vec3 posA = glm::vec3(a->chunkPosition) * 16.0f + glm::vec3(8.0f);
-                glm::vec3 posB = glm::vec3(b->chunkPosition) * 16.0f + glm::vec3(8.0f);
-                float distA = glm::distance(posA,cameraPos);
-                float distB = glm::distance(posB,cameraPos);
-                return distA > distB;
-            });
-
-        // PASS 2: Render visible chunks based on PREVIOUS frame's occlusion results
-        std::vector<ChunkVertex> frameVertices;
-        frameVertices.reserve(10000);
+                chunksRendered++;
         
-        chunksRendered = 0;
+                // Calculate and update LOD
+                LODLevel newLOD = lodManager.calculateLOD(chunkWorldPos, cameraPos, chunk->getLODLevel());
+                if (newLOD != chunk->getLODLevel()) {
+                    chunk->setLODLevel(newLOD);
+                }
 
-        // Set shader uniforms for voxel rendering
-        baseShader.use();
-        baseShader.setMat4("projection", projection);
-        baseShader.setMat4("view", view);
+                // Get mesh data for current LOD
+                const std::vector<Voxel::PackedVoxel>& chunkVertices = chunk->getMeshData(newLOD);
+                uint32_t chunkOffset = packChunkOffset(chunk->chunkPosition, chunk->currentLOD);
 
-        // Collect visible chunks and their geometry
-        for (Chunk* chunk : potentiallyVisibleChunks) {
-            glm::vec3 chunkWorldPos = glm::vec3(chunk->chunkPosition) * 16.0f;
-            
-            // Test visibility using PREVIOUS frame's results
-            bool isVisible = occlusionCuller.testChunkVisibility(chunk, chunkWorldPos);
-            
-            if (!isVisible) {
-                continue;
+                // Pack vertices directly into frame buffer
+                size_t startSize = frameVertices.size();
+                frameVertices.resize(startSize + chunkVertices.size());
+
+                // Use pointer arithmetic for faster copying
+                ChunkVertex* dest = &frameVertices[startSize];
+                const Voxel::PackedVoxel* src = chunkVertices.data();
+                size_t count = chunkVertices.size();
+                
+                for (size_t i = 0; i < count; ++i) {
+                    dest[i].packedData = src[i];
+                    dest[i].chunkOffset = chunkOffset;
+                }
             }
-            
-            chunksRendered++;
-            
-            // Calculate and update LOD
-            LODLevel newLOD = lodManager.calculateLOD(chunkWorldPos, cameraPos, chunk->getLODLevel());
-            
-            if (newLOD != chunk->getLODLevel()) {
-                chunk->setLODLevel(newLOD);
-            }
-    
-            // Get mesh data for current LOD
-            const std::vector<Voxel::PackedVoxel>& chunkVertices = chunk->getMeshData(newLOD);
-    
-            // Pack vertices for rendering
-            for (const Voxel::PackedVoxel& pv : chunkVertices) {
-                ChunkVertex cv;
-                cv.packedData = pv;
-                cv.chunkOffset = packChunkOffset(chunk->chunkPosition, chunk->currentLOD);
-                frameVertices.push_back(cv);
-            }
+            auto lockEnd2 = std::chrono::high_resolution_clock::now();
+            totalCopyTime += std::chrono::duration<float, std::milli>(lockEnd2 - lockEnd).count();
         }
 
-        // Render all visible chunks - this builds the depth buffer
+        // Render all visible chunks
+        static float uploadTime = 0.0f;
         if (!frameVertices.empty()) {
+            auto startTime = std::chrono::high_resolution_clock::now();
             obj.bindVertices(frameVertices.data(), frameVertices.size() * sizeof(ChunkVertex), GL_DYNAMIC_DRAW);
             obj.vertexCount = frameVertices.size();
             obj.draw();
+            auto endTime = std::chrono::high_resolution_clock::now();
+            uploadTime += std::chrono::duration<float, std::milli>(endTime - startTime).count();
         }
-
-        // PASS 3: Now test occlusion queries for NEXT frame using the depth buffer we just built
-        // Disable color writes and depth writes - only test against existing depth
-        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-        glDepthMask(GL_FALSE);
-        glDepthFunc(GL_LEQUAL);  // Test against existing depth
-        
-        for (Chunk* chunk : potentiallyVisibleChunks) {
-            glm::vec3 chunkWorldPos = glm::vec3(chunk->chunkPosition) * 16.0f;
-            
-            // Submit query for next frame (tests against current depth buffer)
-            occlusionCuller.submitOcclusionQuery(chunk, chunkWorldPos, projectionView, &bboxRenderer);
-        }
-        
-        // Restore state
-        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-        glDepthMask(GL_TRUE);
-        glDepthFunc(GL_LESS);
-
-        // End occlusion testing
-        occlusionCuller.endFrame();
 
         // Print stats every second
         if (currentFrame - lastInfoTime > 1.0f) {
             lastInfoTime = currentFrame;
-            std::cout << "FPS: " << (1.0f / deltaTime) 
+            float fps = 1.0f / deltaTime;
+            std::cout << "FPS: " << fps 
                       << " | Chunks loaded: " << worldManager.getLoadedChunkCount()
                       << " | Rendered: " << chunksRendered
                       << " | Frustum culled: " << chunksCulled
-                      << " | Occlusion culled: " << occlusionCuller.getCulledChunks()
-                      << " | Occlusion queries: " << occlusionCuller.getQueriesThisFrame()
                       << " | Vertices: " << frameVertices.size() 
-                      << " | OC: " << (occlusionCuller.isEnabled() ? "ON" : "OFF")
                       << std::endl;
+            std::cout << "Current Chunks in queue: " << worldManager.getLoadingChunkCount() << std::endl;
+            float percentPerFrame = ((uploadTime / fps) / (1000.0f / fps)) * 100.0f;
+            std::cout << "Vertex upload time: " << uploadTime << " ms | " << percentPerFrame << "%" << std::endl;
+            std::cout << "Time spent copying vertex data: " << totalCopyTime << " ms" << std::endl;
+            std::cout << "Time spent acquiring lock: " << lockTime << " ms" << std::endl;
+            uploadTime = 0.0f;
+            totalCopyTime = 0.0f;
+            lockTime = 0.0f;
         }
-        frameCount++;
-
-        // Render all visible chunks
-        if (!frameVertices.empty()) {
-            obj.bindVertices(frameVertices.data(), frameVertices.size() * sizeof(ChunkVertex), GL_DYNAMIC_DRAW);
-            obj.vertexCount = frameVertices.size();
-            obj.draw();
-        }
+        //frameCount++;
  
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -291,17 +250,6 @@ void processInput(GLFWwindow *window)
     }
     if (tabState == GLFW_RELEASE) tabWasPressed = false;
 
-    // Toggle occlusion culling
-    static bool oWasPressed = false;
-    
-    int oState = glfwGetKey(window, GLFW_KEY_O);
-    if (oState == GLFW_PRESS && !oWasPressed && g_occlusionCuller) {
-        bool enabled = !g_occlusionCuller->isEnabled();
-        g_occlusionCuller->setEnabled(enabled);
-        std::cout << "Occlusion culling: " << (enabled ? "ON" : "OFF") << std::endl;
-        oWasPressed = true;
-    }
-    if (oState == GLFW_RELEASE) oWasPressed = false;
 
     // Camera movement
     float cameraSpeed = 50.0f * deltaTime;
