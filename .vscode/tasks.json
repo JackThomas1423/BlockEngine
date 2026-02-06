@@ -19,7 +19,6 @@
 				"${workspaceFolder}/source/chunk.cpp",
 				"${workspaceFolder}/source/worldManager.cpp",
 				"${workspaceFolder}/source/lodManager.cpp",
-				"${workspaceFolder}/source/occlusionCuller.cpp",
 				"${workspaceFolder}/source/ubo.cpp",
 				"${workspaceFolder}/source/object.cpp",
 				"-lglfw3.4",

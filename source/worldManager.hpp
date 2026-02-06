@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <atomic>
 #include <mutex>
+#include <shared_mutex>
 #include <set>
 #include "chunk.hpp"
 #include "threadPool.hpp"
@@ -17,10 +18,17 @@ struct ivec3Compare {
 
 struct ChunkLoadTask {
     glm::ivec3 position;
-    float distance;
+    
+    // Helper function to calculate distance dynamically
+    float getDistance(const glm::vec3& cameraPos) const {
+        glm::vec3 chunkWorldPos = glm::vec3(position) * 16.0f + glm::vec3(8.0f);
+        return glm::length(chunkWorldPos - cameraPos);
+    }
     
     bool operator<(const ChunkLoadTask& other) const {
-        return distance < other.distance;
+        // This comparison is now only used for initial sorting
+        // Distance will be recalculated at execution time
+        return false;
     }
 };
 
@@ -34,20 +42,24 @@ public:
     void updateCameraPosition(const glm::vec3& cameraPosition);
     
     ChunkMap& getChunkMap() { return chunk_map; }
-    std::mutex& getChunkMapMutex() { return chunk_map_mutex; }
+    std::shared_mutex& getChunkMapMutex() { return chunk_map_mutex; }
     
     int getLoadedChunkCount() const;
     int getLoadingChunkCount() const;
     
+    glm::vec3 getCurrentCameraPosition() const;
+    
 private:
     void unloadDistantChunks(const glm::ivec3& cameraChunk);
     void queueChunksForLoading(const glm::ivec3& cameraChunk, const glm::vec3& cameraPos);
+    void pruneOutOfRangeLoadingChunks(const glm::ivec3& cameraChunk);
     
     ChunkMap chunk_map;
-    std::mutex chunk_map_mutex;
+    std::shared_mutex chunk_map_mutex;
     
     std::set<glm::ivec3, ivec3Compare> chunksLoading;
     std::set<glm::ivec3, ivec3Compare> chunksLoaded;
+    std::set<glm::ivec3, ivec3Compare> chunksProcessed; // Tracks all processed chunks (loaded, empty, or skipped)
     std::mutex loadingMutex;
     
     std::atomic<bool> running{false};
@@ -59,7 +71,7 @@ private:
     ThreadPool* pool = nullptr;
     
     const int RENDER_DISTANCE;
-    const int MAX_PENDING_TASKS = 32 * 32 * 32;
+    const int MAX_PENDING_TASKS = 48 * 48 * 48;
     
     void gameLoop();
     std::thread gameThread;
