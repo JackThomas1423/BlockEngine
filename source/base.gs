@@ -2,6 +2,7 @@
 layout (points) in;
 layout (triangle_strip, max_vertices = 4) out;
 
+uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
@@ -37,7 +38,7 @@ const vec3 cubeFaces[24] = vec3[24](
 );
 
 void main() {
-    mat4 pv = projection * view;
+    mat4 pv = projection * view * model;
     vec3 basePos = gl_in[0].gl_Position.xyz;
     int index = gs_in[0].face * 4;
     

@@ -6,6 +6,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "shader.hpp"
+#include "ObjectSun.hpp"
 #include "object.hpp"
 #include "camera.hpp"
 #include "voxel.hpp"
@@ -34,6 +35,9 @@ OcclusionCuller* g_occlusionCuller = nullptr;
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void processInput(GLFWwindow *window);
+
+// lighting
+glm::vec3 lightPos(1.2f, 1.0f, 1.0f);
 
 int main()
 {
@@ -81,7 +85,72 @@ int main()
     std::vector<ChunkVertex> initialVertices;
     Object obj(initialVertices, attributes, &indices, GL_POINTS);
 
+    std::vector<float> sunVertices = {
+        //position
+        0.5f,  0.5f, 0.5f,  //  front top right
+        0.5f, -0.5f, 0.5f, // front bottom right
+        -0.5f, -0.5f, 0.5f,  // front bottom left
+        -0.5f,  0.5f, 0.5f, // front top left
+        0.5f,  0.5f, -0.5f,  //  back top right
+        0.5f, -0.5f, -0.5f,  // back bottom right
+        -0.5f, -0.5f, -0.5f, // back bottom left
+        -0.5f,  0.5f, -0.5f // back top left
+
+        
+    };
+    std::vector<unsigned int> sunIndices = {
+      0, 1, 3,// 1st Triangle
+      1, 2, 3,// 2st Triangle
+      4, 5, 7,// 3st Triangle
+      5, 6, 7,// 4st Triangle
+      4,5,1,// 5st Triangle
+      0,1,4,// 6st Triangle
+      6,7,2,// 7st Triangle
+      3,4,7,// 8st Triangle
+      1,2,6,// 9st Triangle
+      5,6,1,// 10st Triangle
+      0,7,4,// 11st Triangle
+      0,7,3,// 12st Triangle
+      
+
+    };
+    //copy and paste
+    unsigned int VBOS, EBOS, SunVAO;
+    glGenBuffers(1, &VBOS);
+    glGenBuffers(1, &EBOS);
+    glGenVertexArrays(1, &SunVAO);
+
+    glBindVertexArray(SunVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBOS);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(sunVertices), sunVertices, GL_STATIC_DRAW);
+     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBOS);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(sunIndices), sunIndices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0); 
+    glBindVertexArray(0);
+
+
+
+
+     
+   
+
+    std::vector<VertexAttribute> sunAttributes = {
+           
+    };
+
+    /*
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    */
+    Object sun(sunVertices, sunAttributes, sunIndices, GL_TRIANGLES);
+
+
     Shader baseShader("source/base.vs", "source/base.gs", "source/base.fs");
+    Shader SunShader("source/light.vs",  "source/light.fs");
 
     // OpenGL state
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -126,6 +195,7 @@ int main()
         // Update camera matrices
         glm::mat4 view = camera.getViewMatrix();
         glm::mat4 projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 10000.0f);
+        glm::mat4 model = glm::mat4(1.0f);
 
         // Update frustum
         glm::mat4 projectionView = projection * view;
@@ -177,9 +247,43 @@ int main()
         chunksRendered = 0;
 
         // Set shader uniforms for voxel rendering
+        //draw our base block
         baseShader.use();
+        baseShader.setVec3("lightPos", lightPos);
+        baseShader.setMat4("model",model);
+        baseShader.setMat4("view", view);
+        baseShader.setMat4("projection", projection);
+        baseShader.setVec3("lightColor", 0.5f, 1.0f, 1.0f);
+        /*
+        baseShader.setVec3("lightPos", lightPos);
         baseShader.setMat4("projection", projection);
         baseShader.setMat4("view", view);
+        glm::mat4 model = glm::mat4(1.0f);
+        baseShader.setMat4("model", model);
+        // material properties
+        base.setVec3("material.ambient", 1.0f, 0.5f, 0.31f);
+        base.setVec3("material.diffuse", 1.0f, 0.5f, 0.31f);
+*/
+
+      
+        
+
+       // draw our sun
+       SunShader.use();
+       SunShader.setVec3("lightPos", lightPos);
+       SunShader.setMat4("projection", projection);
+       //SunShader.setVec3("lightColor", 1.0f, 1.0f, 1.0f);
+       glm::mat4 model = glm::mat4(1.0f);
+       SunShader.setMat4("model", model);
+       model = glm::mat4(1.0f);
+       model = glm::translate(model, lightPos);
+       glBindVertexArray(SunVAO);
+
+       //sun.bindVertexArray();
+       glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    
+
 
         // Collect visible chunks and their geometry
         for (Chunk* chunk : potentiallyVisibleChunks) {
@@ -262,11 +366,19 @@ int main()
             obj.vertexCount = frameVertices.size();
             obj.draw();
         }
+
+        //sun.draw();
  
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
-    
+    // optional: de-allocate all resources once they've outlived their purpose:
+    // ------------------------------------------------------------------------
+
+    glDeleteVertexArrays(1, &SunVAO);
+    glDeleteBuffers(1, &VBOS);
+    glDeleteBuffers(1, &EBOS);
+
     // Cleanup
     worldManager.stop();
     
