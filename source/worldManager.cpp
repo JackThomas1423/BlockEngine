@@ -4,9 +4,10 @@
 #include <iostream>
 #include <thread>
 
-
 WorldManager::WorldManager(int renderDistance)
-    : RENDER_DISTANCE(renderDistance) {}
+    : RENDER_DISTANCE(renderDistance) {
+  initLoadingOffsets();
+}
 
 WorldManager::~WorldManager() {
   stop();
@@ -24,6 +25,24 @@ void WorldManager::start(ThreadPool *loadingThreadPool,
   updatePool = updateThreadPool;
   running = true;
   gameThread = std::thread(&WorldManager::gameLoop, this);
+}
+
+void WorldManager::initLoadingOffsets() {
+  for (int x = -RENDER_DISTANCE; x <= RENDER_DISTANCE; ++x) {
+    for (int y = -4; y <= 7; ++y) {
+      for (int z = -RENDER_DISTANCE; z <= RENDER_DISTANCE; ++z) {
+        loadingOffsets.push_back(glm::ivec3(x, y, z));
+      }
+    }
+  }
+
+  // Sort by radial distance from center
+  std::sort(loadingOffsets.begin(), loadingOffsets.end(),
+            [](const glm::ivec3 &a, const glm::ivec3 &b) {
+              float distA = a.x * a.x + a.y * a.y + a.z * a.z;
+              float distB = b.x * b.x + b.y * b.y + b.z * b.z;
+              return distA < distB;
+            });
 }
 
 void WorldManager::stop() {
@@ -128,30 +147,26 @@ void WorldManager::queueChunksForLoading(const glm::ivec3 &cameraChunk,
   int maxTerrainChunkY = (MAX_HEIGHT / CHUNK_HEIGHT) + 1;
 
   int totalQueued = 0;
-  for (int x = -RENDER_DISTANCE; x <= RENDER_DISTANCE; ++x) {
-    for (int y = -4; y <= 7; ++y) {
-      for (int z = -RENDER_DISTANCE; z <= RENDER_DISTANCE; ++z) {
-        glm::ivec3 chunkPos = cameraChunk + glm::ivec3(x, y, z);
+  for (const auto &offset : loadingOffsets) {
+    glm::ivec3 chunkPos = cameraChunk + offset;
 
-        if (chunkPos.y > maxTerrainChunkY)
-          continue;
+    if (chunkPos.y > maxTerrainChunkY)
+      continue;
 
-        {
-          std::lock_guard<std::mutex> lock(loadingMutex);
-          if (chunksProcessed.find(chunkPos) != chunksProcessed.end()) {
-            continue;
-          }
-          if (chunksLoading.find(chunkPos) != chunksLoading.end()) {
-            continue;
-          }
-
-          chunksLoading.insert(chunkPos);
-        }
-
-        tasksToLoad.push_back({chunkPos});
-        totalQueued++;
+    {
+      std::lock_guard<std::mutex> lock(loadingMutex);
+      if (chunksProcessed.find(chunkPos) != chunksProcessed.end()) {
+        continue;
       }
+      if (chunksLoading.find(chunkPos) != chunksLoading.end()) {
+        continue;
+      }
+
+      chunksLoading.insert(chunkPos);
     }
+
+    tasksToLoad.push_back({chunkPos});
+    totalQueued++;
   }
 
   if (totalQueued == 0)
@@ -244,6 +259,11 @@ void WorldManager::queueChunksForLoading(const glm::ivec3 &cameraChunk,
         onChunkLoaded(chunk);
       } // Release unique lock before mesh generation
 
+      {
+        std::unique_lock<std::shared_mutex> lock(activeChunksMutex);
+        activeChunks.push_back(chunk);
+      }
+
       // Now generate meshes
       chunk->generateMeshLOD(LOD_0);
       chunk->generateMeshLOD(LOD_1);
@@ -280,6 +300,18 @@ void WorldManager::queueChunksForLoading(const glm::ivec3 &cameraChunk,
     std::cout << "Queue limited: submitted " << tasksSubmitted << " of "
               << tasksToLoad.size() << " pending chunks" << std::endl;
   }
+}
+
+void WorldManager::queueMeshUpdate(Chunk *chunk) {
+  chunk->status = ChunkState::GENERATING;
+  updatePool->enqueue([chunk]() {
+    for (int i = 0; i < 4; ++i) {
+      LODLevel lod = static_cast<LODLevel>(i);
+      if (chunk->getLODMeshNeedsUpdate(lod)) {
+        chunk->generateMeshLOD(lod);
+      }
+    }
+  });
 }
 
 int WorldManager::getLoadedChunkCount() const {
@@ -371,6 +403,17 @@ void WorldManager::unloadChunk(const glm::ivec3 &pos) {
     // Remove from map
     chunk_map.erase(it);
     chunksLoaded.erase(pos);
+  }
+
+  // Remove from activeChunks list
+  {
+    std::unique_lock<std::shared_mutex> lock(activeChunksMutex);
+    auto itVec =
+        std::find(activeChunks.begin(), activeChunks.end(), chunkToDelete);
+    if (itVec != activeChunks.end()) {
+      *itVec = activeChunks.back();
+      activeChunks.pop_back();
+    }
   }
 
   // PHASE 2: Queue for deletion AFTER releasing lock and severing all links

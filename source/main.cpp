@@ -132,8 +132,9 @@ int main() {
     std::vector<Chunk *> visibleChunks;
 
     {
-      std::shared_lock<std::shared_mutex> lock(worldManager.getChunkMapMutex());
-      for (const auto &[pos, chunk] : worldManager.getChunkMap()) {
+      std::shared_lock<std::shared_mutex> lock(
+          worldManager.getActiveChunksMutex());
+      for (Chunk *chunk : worldManager.getActiveChunks()) {
         if (chunk == nullptr)
           continue;
 
@@ -158,13 +159,19 @@ int main() {
 
       chunksRendered++;
 
-      if (chunk->status == ChunkState::WAITING_FOR_MESH_UPDATE) {
-        for (int i = 0; i < 4; ++i) {
-          LODLevel lod = static_cast<LODLevel>(i);
-          if (chunk->getLODMeshNeedsUpdate(lod)) {
-            chunk->generateMeshLOD(lod);
-          }
+      // Automatically assign the newly requested LOD. Wait for the engine to
+      // mesh it natively through the background pool.
+      if (newLOD != chunk->getLODLevel() &&
+          chunk->status != ChunkState::GENERATING &&
+          chunk->status != ChunkState::WAITING_FOR_MESH_UPDATE) {
+        chunk->setLODLevel(newLOD);
+        if (chunk->getLODMeshNeedsUpdate(newLOD)) {
+          worldManager.queueMeshUpdate(chunk);
         }
+      }
+
+      if (chunk->status == ChunkState::WAITING_FOR_MESH_UPDATE) {
+        worldManager.queueMeshUpdate(chunk);
       }
 
       size_t vertex_count = chunk->getVertexCount(newLOD);

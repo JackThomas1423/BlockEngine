@@ -11,7 +11,6 @@
 #include <shared_mutex>
 #include <vector>
 
-
 struct ivec3Compare {
   bool operator()(const glm::ivec3 &a, const glm::ivec3 &b) const {
     if (a.x != b.x)
@@ -46,6 +45,11 @@ public:
   ChunkMap &getChunkMap() { return chunk_map; }
   std::shared_mutex &getChunkMapMutex() { return chunk_map_mutex; }
 
+  const std::vector<Chunk *> &getActiveChunks() const { return activeChunks; }
+  std::shared_mutex &getActiveChunksMutex() const { return activeChunksMutex; }
+
+  void queueMeshUpdate(Chunk *chunk);
+
   int getLoadedChunkCount() const;
   int getLoadingChunkCount() const;
   int getRenderDistance() const { return RENDER_DISTANCE; }
@@ -63,6 +67,12 @@ private:
 
   ChunkMap chunk_map;
   std::shared_mutex chunk_map_mutex;
+
+  std::vector<glm::ivec3> loadingOffsets;
+  void initLoadingOffsets();
+
+  std::vector<Chunk *> activeChunks;
+  mutable std::shared_mutex activeChunksMutex;
 
   std::vector<Chunk *> chunksToDelete;
   std::mutex delete_queue_mutex;

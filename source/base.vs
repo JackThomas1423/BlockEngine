@@ -60,13 +60,12 @@ void main() {
     int chunkY = int(GET_CHUNK_Y(instanceData));
     int chunkZ = int(GET_CHUNK_Z(instanceData));
 
-    vec3 voxelPosition = vec3(x, y, z);
+    float current_lod_scale = pow(2.0, float(lod)) - 1.0;
+    vec3 voxelPosition = vec3(x, y, z) * (1.0 + current_lod_scale);
     vec3 worldPosition = voxelPosition + (ivec3(chunkX, chunkY, chunkZ) * ivec3(16, 16, 16));
 
     float lengthV = float(length);
     float heightU = float(height);
-
-    float current_lod_scale = pow(2.0, float(lod)) - 1.0;
     
     vec3 scale = vec3(1.0);
     
