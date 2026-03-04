@@ -1,56 +1,100 @@
 #version 410 core
-layout (location = 0) in uint packedData;
-layout (location = 1) in uint packedChunkPosition;
+layout (location = 0) in uint vertexData;    // Per-vertex: local pos, dimensions, color, face
 
+uniform uint instanceData;                   // Per-instance: chunk pos
 uniform mat4 view;
 uniform mat4 projection;
 
-out VS_OUT {
-  int length;
-  int height;
-  int face;
-  int color;
-  int lod;
-} vs_out;
+flat out int fsColor;
 
-// Optimized bit layout:
-// x: 4 bits (0-15)         - bits 0-3
-// y: 4 bits (0-15)         - bits 4-7
-// z: 4 bits (0-15)         - bits 8-11
-// length: 4 bits (1-16)    - bits 12-15  (stored as 0-15, add 1 when unpacking)
-// height: 4 bits (1-16)    - bits 16-19  (stored as 0-15, add 1 when unpacking)
-// color: 8 bits (0-255)    - bits 20-27
-// facing: 3 bits (0-7)     - bits 28-30
+// Vertex data unpacking (32-bit)
+#define GET_X(data) (((data) >> 0u) & 0xFu)
+#define GET_Y(data) (((data) >> 4u) & 0xFu)
+#define GET_Z(data) (((data) >> 8u) & 0xFu)
+#define GET_LENGTH(data) ((((data) >> 12u) & 0xFu) + 1u)
+#define GET_HEIGHT(data) ((((data) >> 16u) & 0xFu) + 1u)
+#define GET_COLOR(data) (((data) >> 20u) & 0xFFu)
+#define GET_FACING(data) (((data) >> 27u) & 0x7u)
+#define GET_LOD(data) (((data) >> 30u) & 0x3u)
 
-#define GET_X(packed)        (((packed) >> 0u) & 0xFu)
-#define GET_Y(packed)        (((packed) >> 4u) & 0xFu)
-#define GET_Z(packed)        (((packed) >> 8u) & 0xFu)
-#define GET_LENGTH(packed)   ((((packed) >> 12u) & 0xFu) + 1u)  // Add 1 to get 1-16 range
-#define GET_HEIGHT(packed)   ((((packed) >> 16u) & 0xFu) + 1u)  // Add 1 to get 1-16 range
-#define GET_COLOR(packed)    (((packed) >> 20u) & 0xFFu)
-#define GET_FACING(packed)   (((packed) >> 28u) & 0x7u)
+// Instance data unpacking (32-bit)
+// LOD removed - now using 12 bits for Z coordinate
+#define GET_CHUNK_X(data) ((((data) >> 0u) & 0x3FFu) - 512u)
+#define GET_CHUNK_Y(data) ((((data) >> 10u) & 0x3FFu) - 512u)
+#define GET_CHUNK_Z(data) ((((data) >> 20u) & 0xFFFu) - 2048u)
 
-#define GET_CHUNK_X(packed)   (((packed) >> 0u) & 0xFFu) - 128
-#define GET_CHUNK_Y(packed)   (((packed) >> 8u) & 0xFFu) - 128
-#define GET_CHUNK_Z(packed)   (((packed) >> 16u) & 0xFFu) - 128
-#define GET_CHUNK_LOD(packed) (((packed) >> 24u) & 0xFFu) - 128
+const vec3 cubeFaces[24] = vec3[24](
+    // Front Face (Z = 0.5)
+    vec3(-0.5, 0.5, 0.5), vec3(-0.5, -0.5, 0.5),
+    vec3(0.5, 0.5, 0.5), vec3(0.5, -0.5, 0.5),
+    // Back Face (Z = -0.5)
+    vec3(0.5, 0.5, -0.5), vec3(0.5, -0.5, -0.5),
+    vec3(-0.5, 0.5, -0.5), vec3(-0.5, -0.5, -0.5),
+    // Top Face (Y = 0.5)
+    vec3(-0.5, 0.5, -0.5), vec3(-0.5, 0.5, 0.5),
+    vec3(0.5, 0.5, -0.5), vec3(0.5, 0.5, 0.5),
+    // Bottom Face (Y = -0.5)
+    vec3(-0.5, -0.5, 0.5), vec3(-0.5, -0.5, -0.5),
+    vec3(0.5, -0.5, 0.5), vec3(0.5, -0.5, -0.5),
+    // Right Face (X = 0.5)
+    vec3(0.5, 0.5, 0.5), vec3(0.5, -0.5, 0.5),
+    vec3(0.5, 0.5, -0.5), vec3(0.5, -0.5, -0.5),
+    // Left Face (X = -0.5)
+    vec3(-0.5, 0.5, -0.5), vec3(-0.5, -0.5, -0.5),
+    vec3(-0.5, 0.5, 0.5), vec3(-0.5, -0.5, 0.5)
+);
 
 void main() {
-    int x = int(GET_X(packedData));
-    int y = int(GET_Y(packedData));
-    int z = int(GET_Z(packedData));
-    int length = int(GET_LENGTH(packedData));  // Now 1-16
-    int height = int(GET_HEIGHT(packedData));  // Now 1-16
-    int color = int(GET_COLOR(packedData));
-    int face = int(GET_FACING(packedData));
+    // Unpack vertex data
+    int x      = int(GET_X(vertexData));
+    int y      = int(GET_Y(vertexData));
+    int z      = int(GET_Z(vertexData));
+    int length = int(GET_LENGTH(vertexData));
+    int height = int(GET_HEIGHT(vertexData));
+    int color  = int(GET_COLOR(vertexData));
+    int face   = int(GET_FACING(vertexData));
+    int lod    = int(GET_LOD(vertexData));
+    
+    // Unpack instance data
+    int chunkX = int(GET_CHUNK_X(instanceData));
+    int chunkY = int(GET_CHUNK_Y(instanceData));
+    int chunkZ = int(GET_CHUNK_Z(instanceData));
 
-    ivec3 chunkOffset = ivec3(GET_CHUNK_X(packedChunkPosition), GET_CHUNK_Y(packedChunkPosition), GET_CHUNK_Z(packedChunkPosition)) * ivec3(16,16,16);
-    vec3 worldPosition = vec3(x, y, z) + chunkOffset;
+    vec3 voxelPosition = vec3(x, y, z);
+    vec3 worldPosition = voxelPosition + (ivec3(chunkX, chunkY, chunkZ) * ivec3(16, 16, 16));
 
-    gl_Position = vec4(worldPosition, 1.0);
-    vs_out.color = color;
-    vs_out.face = face;
-    vs_out.length = length;
-    vs_out.height = height;
-    vs_out.lod = int(GET_CHUNK_LOD(packedChunkPosition));
+    float lengthV = float(length);
+    float heightU = float(height);
+
+    float current_lod_scale = pow(2.0, float(lod)) - 1.0;
+    
+    vec3 scale = vec3(1.0);
+    
+    // Face ordering: FRONT=0, BACK=1, TOP=2, BOTTOM=3, RIGHT=4, LEFT=5
+    // For each face: d=depth axis, u=height axis, v=length axis
+    if (face == 0 || face == 1) {
+        // FRONT/BACK: d=2(Z), u=0(X), v=1(Y)
+        // height expands in u(X), length expands in v(Y)
+        scale = vec3(heightU, lengthV, 1.0 + current_lod_scale);
+        fsColor = 1;
+    } else if (face == 2 || face == 3) {
+        // TOP/BOTTOM: d=1(Y), u=0(X), v=2(Z)
+        // height expands in u(X), length expands in v(Z)
+        scale = vec3(heightU, 1.0 + current_lod_scale, lengthV);
+        fsColor = 2;
+    } else {
+        // LEFT/RIGHT: d=0(X), u=1(Y), v=2(Z)
+        // height expands in u(Y), length expands in v(Z)
+        scale = vec3(1.0 + current_lod_scale, heightU, lengthV);
+        fsColor = 3;
+    }
+
+    int index = face * 4;
+    int vertexIndex = gl_VertexID % 4;
+    vec3 localVertex = cubeFaces[index + vertexIndex] + 0.5;
+    
+    vec3 worldVertex = worldPosition + localVertex * scale;
+
+    mat4 pv = projection * view;
+    gl_Position = pv * vec4(worldVertex, 1.0);
 }

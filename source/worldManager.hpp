@@ -1,78 +1,91 @@
 #pragma once
 
-#include <glm/glm.hpp>
-#include <atomic>
-#include <mutex>
-#include <shared_mutex>
-#include <set>
 #include "chunk.hpp"
 #include "threadPool.hpp"
+#include <atomic>
+#include <glm/glm.hpp>
+#include <map>
+#include <mutex>
+#include <queue>
+#include <set>
+#include <shared_mutex>
+#include <vector>
+
 
 struct ivec3Compare {
-    bool operator()(const glm::ivec3& a, const glm::ivec3& b) const {
-        if (a.x != b.x) return a.x < b.x;
-        if (a.y != b.y) return a.y < b.y;
-        return a.z < b.z;
-    }
+  bool operator()(const glm::ivec3 &a, const glm::ivec3 &b) const {
+    if (a.x != b.x)
+      return a.x < b.x;
+    if (a.y != b.y)
+      return a.y < b.y;
+    return a.z < b.z;
+  }
 };
 
 struct ChunkLoadTask {
-    glm::ivec3 position;
-    
-    // Helper function to calculate distance dynamically
-    float getDistance(const glm::vec3& cameraPos) const {
-        glm::vec3 chunkWorldPos = glm::vec3(position) * 16.0f + glm::vec3(8.0f);
-        return glm::length(chunkWorldPos - cameraPos);
-    }
-    
-    bool operator<(const ChunkLoadTask& other) const {
-        // This comparison is now only used for initial sorting
-        // Distance will be recalculated at execution time
-        return false;
-    }
+  glm::ivec3 position;
+
+  float getDistance(const glm::vec3 &cameraPos) const {
+    glm::vec3 chunkWorldPos = glm::vec3(position) * 16.0f + glm::vec3(8.0f);
+    return glm::length(chunkWorldPos - cameraPos);
+  }
+
+  bool operator<(const ChunkLoadTask &other) const { return false; }
 };
 
 class WorldManager {
 public:
-    WorldManager(int renderDistance = 32);
-    ~WorldManager();
-    
-    void start(ThreadPool* threadPool);
-    void stop();
-    void updateCameraPosition(const glm::vec3& cameraPosition);
-    
-    ChunkMap& getChunkMap() { return chunk_map; }
-    std::shared_mutex& getChunkMapMutex() { return chunk_map_mutex; }
-    
-    int getLoadedChunkCount() const;
-    int getLoadingChunkCount() const;
-    
-    glm::vec3 getCurrentCameraPosition() const;
-    
+  WorldManager(int renderDistance = 32);
+  ~WorldManager();
+
+  void start(ThreadPool *loadingThreadPool, ThreadPool *updateThreadPool);
+  void stop();
+  void updateCameraPosition(const glm::vec3 &cameraPosition);
+  void cleanUpDeletedChunks();
+
+  ChunkMap &getChunkMap() { return chunk_map; }
+  std::shared_mutex &getChunkMapMutex() { return chunk_map_mutex; }
+
+  int getLoadedChunkCount() const;
+  int getLoadingChunkCount() const;
+  int getRenderDistance() const { return RENDER_DISTANCE; }
+
+  glm::vec3 getCurrentCameraPosition() const;
+
 private:
-    void unloadDistantChunks(const glm::ivec3& cameraChunk);
-    void queueChunksForLoading(const glm::ivec3& cameraChunk, const glm::vec3& cameraPos);
-    void pruneOutOfRangeLoadingChunks(const glm::ivec3& cameraChunk);
-    
-    ChunkMap chunk_map;
-    std::shared_mutex chunk_map_mutex;
-    
-    std::set<glm::ivec3, ivec3Compare> chunksLoading;
-    std::set<glm::ivec3, ivec3Compare> chunksLoaded;
-    std::set<glm::ivec3, ivec3Compare> chunksProcessed; // Tracks all processed chunks (loaded, empty, or skipped)
-    std::mutex loadingMutex;
-    
-    std::atomic<bool> running{false};
-    std::atomic<int> pendingTaskCount{0};
-    
-    glm::vec3 currentCameraPosition{0.0f};
-    std::mutex cameraPosMutex;
-    
-    ThreadPool* pool = nullptr;
-    
-    const int RENDER_DISTANCE;
-    const int MAX_PENDING_TASKS = 48 * 48 * 48;
-    
-    void gameLoop();
-    std::thread gameThread;
+  void unloadDistantChunks(const glm::ivec3 &cameraChunk);
+  void queueChunksForLoading(const glm::ivec3 &cameraChunk,
+                             const glm::vec3 &cameraPos);
+  void pruneOutOfRangeLoadingChunks(const glm::ivec3 &cameraChunk);
+
+  void onChunkLoaded(Chunk *chunk);
+  void unloadChunk(const glm::ivec3 &pos);
+
+  ChunkMap chunk_map;
+  std::shared_mutex chunk_map_mutex;
+
+  std::vector<Chunk *> chunksToDelete;
+  std::mutex delete_queue_mutex;
+
+  std::set<glm::ivec3, ivec3Compare> chunksLoading;
+  std::set<glm::ivec3, ivec3Compare> chunksLoaded;
+  std::set<glm::ivec3, ivec3Compare> chunksProcessed;
+  mutable std::mutex loadingMutex;
+
+  std::atomic<bool> running{false};
+  std::atomic<int> pendingTaskCount{0};
+
+  glm::vec3 currentCameraPosition{0.0f};
+  mutable std::mutex cameraPosMutex;
+
+  ThreadPool *loadingPool = nullptr;
+  ThreadPool *updatePool = nullptr;
+
+  const int RENDER_DISTANCE;
+  const int MAX_PENDING_TASKS = 32 * 32 * 32;
+  const int MAX_UPDATES_PER_FRAME = 1024;
+  const int MAX_PENDING_UPDATES = 32 * 32 * 32;
+
+  void gameLoop();
+  std::thread gameThread;
 };

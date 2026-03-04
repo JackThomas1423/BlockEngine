@@ -5,10 +5,10 @@
 
 struct LODConfig {
     float distances[4] = {
-        256.0f,   // LOD_0 threshold
-        512.0f,   // LOD_1 threshold
-        1024.0f,  // LOD_2 threshold
-        2048.0f   // LOD_3 threshold
+        512.0f,   // LOD_0 threshold
+        1024.0f,   // LOD_1 threshold
+        2048.0f,  // LOD_2 threshold
+        4096.0f   // LOD_3 threshold
     };
     float hysteresis = 32.0f; // Prevents rapid LOD switching
 };
