@@ -60,8 +60,8 @@ void main() {
     int chunkY = int(GET_CHUNK_Y(instanceData));
     int chunkZ = int(GET_CHUNK_Z(instanceData));
 
-    float current_lod_scale = pow(2.0, float(lod)) - 1.0;
-    vec3 voxelPosition = vec3(x, y, z) * (1.0 + current_lod_scale);
+    float current_lod_scale = pow(2.0, float(lod));
+    vec3 voxelPosition = vec3(x, y, z);
     vec3 worldPosition = voxelPosition + (ivec3(chunkX, chunkY, chunkZ) * ivec3(16, 16, 16));
 
     float lengthV = float(length);
@@ -74,17 +74,17 @@ void main() {
     if (face == 0 || face == 1) {
         // FRONT/BACK: d=2(Z), u=0(X), v=1(Y)
         // height expands in u(X), length expands in v(Y)
-        scale = vec3(heightU, lengthV, 1.0 + current_lod_scale);
+        scale = vec3(heightU, lengthV, current_lod_scale);
         fsColor = 1;
     } else if (face == 2 || face == 3) {
         // TOP/BOTTOM: d=1(Y), u=0(X), v=2(Z)
         // height expands in u(X), length expands in v(Z)
-        scale = vec3(heightU, 1.0 + current_lod_scale, lengthV);
+        scale = vec3(heightU, current_lod_scale, lengthV);
         fsColor = 2;
     } else {
         // LEFT/RIGHT: d=0(X), u=1(Y), v=2(Z)
         // height expands in u(Y), length expands in v(Z)
-        scale = vec3(1.0 + current_lod_scale, heightU, lengthV);
+        scale = vec3(current_lod_scale, heightU, lengthV);
         fsColor = 3;
     }
 
