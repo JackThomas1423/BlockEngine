@@ -19,8 +19,6 @@
 				"${workspaceFolder}/source/voxel.cpp",
 				"${workspaceFolder}/source/chunk.cpp",
 				"${workspaceFolder}/source/worldManager.cpp",
-				"${workspaceFolder}/source/lodManager.cpp",
-				"${workspaceFolder}/source/object.cpp",
 				"-lglfw3.4",
 				"-o",
 				"${workspaceFolder}/app",

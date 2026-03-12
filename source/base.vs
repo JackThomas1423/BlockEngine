@@ -14,11 +14,9 @@ flat out int fsColor;
 #define GET_LENGTH(data) ((((data) >> 12u) & 0xFu) + 1u)
 #define GET_HEIGHT(data) ((((data) >> 16u) & 0xFu) + 1u)
 #define GET_COLOR(data) (((data) >> 20u) & 0xFFu)
-#define GET_FACING(data) (((data) >> 27u) & 0x7u)
-#define GET_LOD(data) (((data) >> 30u) & 0x3u)
+#define GET_FACING(data) (((data) >> 28u) & 0x7u)
 
 // Instance data unpacking (32-bit)
-// LOD removed - now using 12 bits for Z coordinate
 #define GET_CHUNK_X(data) ((((data) >> 0u) & 0x3FFu) - 512u)
 #define GET_CHUNK_Y(data) ((((data) >> 10u) & 0x3FFu) - 512u)
 #define GET_CHUNK_Z(data) ((((data) >> 20u) & 0xFFFu) - 2048u)
@@ -53,14 +51,12 @@ void main() {
     int height = int(GET_HEIGHT(vertexData));
     int color  = int(GET_COLOR(vertexData));
     int face   = int(GET_FACING(vertexData));
-    int lod    = int(GET_LOD(vertexData));
     
     // Unpack instance data
     int chunkX = int(GET_CHUNK_X(instanceData));
     int chunkY = int(GET_CHUNK_Y(instanceData));
     int chunkZ = int(GET_CHUNK_Z(instanceData));
 
-    float current_lod_scale = pow(2.0, float(lod));
     vec3 voxelPosition = vec3(x, y, z);
     vec3 worldPosition = voxelPosition + (ivec3(chunkX, chunkY, chunkZ) * ivec3(16, 16, 16));
 
@@ -74,17 +70,17 @@ void main() {
     if (face == 0 || face == 1) {
         // FRONT/BACK: d=2(Z), u=0(X), v=1(Y)
         // height expands in u(X), length expands in v(Y)
-        scale = vec3(heightU, lengthV, current_lod_scale);
+        scale = vec3(heightU, lengthV, 1.0);
         fsColor = 1;
     } else if (face == 2 || face == 3) {
         // TOP/BOTTOM: d=1(Y), u=0(X), v=2(Z)
         // height expands in u(X), length expands in v(Z)
-        scale = vec3(heightU, current_lod_scale, lengthV);
+        scale = vec3(heightU, 1.0, lengthV);
         fsColor = 2;
     } else {
         // LEFT/RIGHT: d=0(X), u=1(Y), v=2(Z)
         // height expands in u(Y), length expands in v(Z)
-        scale = vec3(current_lod_scale, heightU, lengthV);
+        scale = vec3(1.0, heightU, lengthV);
         fsColor = 3;
     }
 

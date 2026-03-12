@@ -1,5 +1,5 @@
-#include <GLFW/glfw3.h>
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -8,7 +8,6 @@
 #include "camera.hpp"
 #include "chunk.hpp"
 #include "frustum.hpp"
-#include "lodManager.hpp"
 #include "shader.hpp"
 #include "threadPool.hpp"
 #include "voxel.hpp"
@@ -44,8 +43,6 @@ int main() {
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-  //glfwSwapInterval(0);
-
   GLFWwindow *window =
       glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Voxel Engine", NULL, NULL);
   if (window == NULL) {
@@ -66,8 +63,7 @@ int main() {
   // Initialize systems
   ThreadPool loadingPool(4);
   ThreadPool updatePool(3);
-  WorldManager worldManager(32);
-  LODManager lodManager;
+  WorldManager worldManager(48);
 
   Shader baseShader("source/base.vs", "source/base.fs");
 
@@ -94,8 +90,10 @@ int main() {
   // Stats tracking
   float lastInfoTime = 0.0f;
   int chunksRendered = 0;
-  int emptyChunks = 0;
   size_t totalVertices = 0;
+
+  // Reuse this allocation across frames to avoid per-frame heap churn.
+  std::vector<Chunk *> visibleChunks;
 
   // Main render loop
   while (!glfwWindowShouldClose(window)) {
@@ -114,7 +112,14 @@ int main() {
     glm::mat4 projection = camera.getProjectionMatrix(
         (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 10000.0f);
 
-    // Update frustum
+    uint8_t visibleQuadFlag = 0;
+
+    for (size_t f = 0; f < 6; ++f) {
+      float dot = glm::dot(camera.getFront(), Voxel::FaceNormals[f]);
+      if (dot < 0.0f) visibleQuadFlag |= (1 << f);
+    }
+
+    // Update frustum (also precomputes pVertexDot for isChunkVisible)
     glm::mat4 projectionView = projection * view;
     frustum.update(projectionView);
 
@@ -123,69 +128,58 @@ int main() {
     worldManager.updateCameraPosition(cameraPos);
 
     chunksRendered = 0;
-    emptyChunks = 0;
     totalVertices = 0;
 
     baseShader.use();
     baseShader.setMat4("projection", projection);
     baseShader.setMat4("view", view);
 
-    // Collect chunks to render using OCTREE
-    std::vector<Chunk *> visibleChunks;
-
+    // --- Frustum culling ---
+    // We iterate activeChunkWorldPos — a flat array of vec3s with no pointer
+    // chasing — and only dereference the Chunk* for chunks that pass the test.
+    // markedForDeletion is checked after the frustum test so geometry rejects
+    // most chunks before we pay for the atomic load.
+    visibleChunks.clear();
+    auto startCull = std::chrono::high_resolution_clock::now();
     {
-      std::shared_lock<std::shared_mutex> lock(
-          worldManager.getActiveChunksMutex());
-      for (Chunk *chunk : worldManager.getActiveChunks()) {
-        if (chunk == nullptr)
+      std::shared_lock<std::shared_mutex> lock(worldManager.getActiveChunksMutex());
+      const auto &chunks   = worldManager.getActiveChunks();
+      const auto &worldPos = worldManager.getActiveChunkWorldPos();
+      const size_t count   = chunks.size();
+
+      for (size_t i = 0; i < count; ++i) {
+        // Hot path: only touches the flat float array — no Chunk* dereference.
+        if (!frustum.isChunkVisible(worldPos[i]))
           continue;
 
-        if (chunk->status == ChunkState::MARKED_FOR_DELETION)
+        // Cold path: chunk passed frustum, now check if it's being deleted.
+        Chunk *chunk = chunks[i];
+        if (chunk->markedForDeletion.load(std::memory_order_acquire))
           continue;
-        glm::vec3 chunkWorldPos = glm::vec3(chunk->chunkPosition) * 16.0f;
-        glm::vec3 chunkMin = chunkWorldPos;
-        glm::vec3 chunkMax = chunkWorldPos + glm::vec3(16.0f);
 
-        if (frustum.isBoxVisible(chunkMin, chunkMax)) {
-          visibleChunks.push_back(chunk);
-        }
+        visibleChunks.push_back(chunk);
       }
     }
+    auto endCull = std::chrono::high_resolution_clock::now();
+    float timeCull = std::chrono::duration<float, std::milli>(endCull - startCull).count();
 
     auto start = std::chrono::high_resolution_clock::now();
     for (Chunk *chunk : visibleChunks) {
-      glm::vec3 chunkWorldPos = glm::vec3(chunk->chunkPosition) * 16.0f;
-
-      LODLevel newLOD = lodManager.calculateLOD(chunkWorldPos, cameraPos,
-                                                chunk->getLODLevel());
-
-      chunksRendered++;
-
-      // Automatically assign the newly requested LOD. Wait for the engine to
-      // mesh it natively through the background pool.
-      if (newLOD != chunk->getLODLevel() &&
-          chunk->status != ChunkState::GENERATING &&
-          chunk->status != ChunkState::WAITING_FOR_MESH_UPDATE) {
-        chunk->setLODLevel(newLOD);
-        if (chunk->getLODMeshNeedsUpdate(newLOD)) {
+      if (!chunk->markedForDeletion.load(std::memory_order_acquire) &&
+          chunk->status == ChunkState::WAITING_FOR_MESH_UPDATE) {
           worldManager.queueMeshUpdate(chunk);
-        }
+          continue;
       }
 
-      if (chunk->status == ChunkState::WAITING_FOR_MESH_UPDATE) {
-        worldManager.queueMeshUpdate(chunk);
-      }
-
-      size_t vertex_count = chunk->getVertexCount(newLOD);
-      if (vertex_count == 0)
-        continue;
+      size_t vertex_count = chunk->getVertexCount();
+      if (vertex_count == 0) continue;
 
       glm::ivec3 cp = chunk->chunkPosition;
-      baseShader.setUInt("instanceData",
-                         Voxel::packChunkData(cp.x, cp.y, cp.z));
+      baseShader.setUInt("instanceData", Voxel::packChunkData(cp.x, cp.y, cp.z));
 
-      chunk->bindAndDraw(newLOD);
+      chunk->bindAndDraw();
       totalVertices += vertex_count;
+      chunksRendered++;
     }
     auto end = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration<float, std::milli>(end - start).count();
@@ -197,16 +191,14 @@ int main() {
       std::cout << "FPS: " << fps
                 << " | Chunks loaded: " << worldManager.getLoadedChunkCount()
                 << " | Rendered: " << chunksRendered
-                << " | Vertices: " << totalVertices
-                << " | Empty: " << emptyChunks << std::endl;
-      std::cout << "Frame Time spent culling: " << time * fps << std::endl;
+                << " | Vertices: " << totalVertices << std::endl;
+      std::cout << "Frame Time spent rendering: " << time * fps << std::endl;
+      std::cout << "Frame Time spent culling  : " << timeCull * fps << std::endl;
+      std::cout << "Visible Normals: " << (int)visibleQuadFlag << std::endl;
     }
 
-    // Handle delayed deletions from the world manager safely outside chunk
-    // rendering loop
     worldManager.cleanUpDeletedChunks();
 
-    // Swap buffers and poll events
     glfwSwapBuffers(window);
     glfwPollEvents();
   }

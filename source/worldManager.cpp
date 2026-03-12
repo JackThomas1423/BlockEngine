@@ -11,7 +11,6 @@ WorldManager::WorldManager(int renderDistance)
 
 WorldManager::~WorldManager() {
   stop();
-  // Clean up chunks with exclusive lock
   std::unique_lock<std::shared_mutex> lock(chunk_map_mutex);
   for (auto &pair : chunk_map) {
     delete pair.second;
@@ -36,7 +35,6 @@ void WorldManager::initLoadingOffsets() {
     }
   }
 
-  // Sort by radial distance from center
   std::sort(loadingOffsets.begin(), loadingOffsets.end(),
             [](const glm::ivec3 &a, const glm::ivec3 &b) {
               float distA = a.x * a.x + a.y * a.y + a.z * a.z;
@@ -107,9 +105,8 @@ void WorldManager::unloadDistantChunks(const glm::ivec3 &cameraChunk) {
     }
   }
 
-  // Unload chunks using the safe two-phase protocol
   for (const auto &pos : chunksToUnload) {
-    unloadChunk(pos); // Uses the safe deletion we defined above
+    unloadChunk(pos);
   }
 }
 
@@ -189,7 +186,6 @@ void WorldManager::queueChunksForLoading(const glm::ivec3 &cameraChunk,
     tasksSubmitted++;
 
     loadingPool->enqueue([task, this]() {
-      // RAII guard for task count
       struct Guard {
         std::atomic<int> &c;
         Guard(std::atomic<int> &cnt) : c(cnt) {}
@@ -257,31 +253,30 @@ void WorldManager::queueChunksForLoading(const glm::ivec3 &cameraChunk,
         std::unique_lock<std::shared_mutex> lock(chunk_map_mutex);
         chunk_map[task.position] = chunk;
         onChunkLoaded(chunk);
-      } // Release unique lock before mesh generation
+      }
 
+      // Add to both parallel arrays atomically under one lock.
       {
         std::unique_lock<std::shared_mutex> lock(activeChunksMutex);
         activeChunks.push_back(chunk);
+        activeChunkWorldPos.push_back(glm::vec3(chunk->chunkPosition) * 16.0f);
       }
 
-      // Now generate meshes
-      chunk->generateMeshLOD(LOD_0);
-      chunk->generateMeshLOD(LOD_1);
-      chunk->generateMeshLOD(LOD_2);
+      chunk->generateMesh();
 
       // Queue neighbor updates
       glm::ivec3 pos = chunk->chunkPosition;
-      glm::ivec3 neighbors[6] = {
+      glm::ivec3 neighborOffsets[6] = {
           pos + glm::ivec3(1, 0, 0), pos + glm::ivec3(-1, 0, 0),
           pos + glm::ivec3(0, 1, 0), pos + glm::ivec3(0, -1, 0),
           pos + glm::ivec3(0, 0, 1), pos + glm::ivec3(0, 0, -1)};
 
-      for (const auto &neighborPos : neighbors) {
+      for (const auto &neighborPos : neighborOffsets) {
         {
           std::shared_lock<std::shared_mutex> lock(chunk_map_mutex);
           auto it = chunk_map.find(neighborPos);
           if (it != chunk_map.end() && it->second != nullptr) {
-            it->second->setLODMeshNeedsUpdate(it->second->currentLOD);
+            it->second->setMeshNeedsUpdate();
             it->second->status = ChunkState::WAITING_FOR_MESH_UPDATE;
           }
         }
@@ -305,12 +300,7 @@ void WorldManager::queueChunksForLoading(const glm::ivec3 &cameraChunk,
 void WorldManager::queueMeshUpdate(Chunk *chunk) {
   chunk->status = ChunkState::GENERATING;
   updatePool->enqueue([chunk]() {
-    for (int i = 0; i < 4; ++i) {
-      LODLevel lod = static_cast<LODLevel>(i);
-      if (chunk->getLODMeshNeedsUpdate(lod)) {
-        chunk->generateMeshLOD(lod);
-      }
-    }
+    chunk->generateMesh();
   });
 }
 
@@ -325,8 +315,6 @@ int WorldManager::getLoadingChunkCount() const {
 }
 
 void WorldManager::onChunkLoaded(Chunk *chunk) {
-  // std::unique_lock<std::shared_mutex> lock(chunk_map_mutex);
-
   glm::ivec3 pos = chunk->chunkPosition;
 
   const glm::ivec3 offsets[6] = {
@@ -338,10 +326,8 @@ void WorldManager::onChunkLoaded(Chunk *chunk) {
       glm::ivec3(0, 0, -1)  // NEIGHBOR_NEG_Z
   };
 
-  // Opposite directions for bidirectional linking
   const int opposite[6] = {1, 0, 3, 2, 5, 4};
 
-  // Link this chunk to its neighbors (and vice versa)
   for (int dir = 0; dir < 6; ++dir) {
     glm::ivec3 neighborPos = pos + offsets[dir];
     auto it = chunk_map.find(neighborPos);
@@ -349,13 +335,10 @@ void WorldManager::onChunkLoaded(Chunk *chunk) {
     if (it != chunk_map.end() && it->second != nullptr) {
       Chunk *neighbor = it->second;
 
-      // Bidirectional linking
       chunk->setNeighbor(dir, neighbor);
       neighbor->setNeighbor(opposite[dir], chunk);
 
-      // Both chunks need to remesh now
-      // Their interior faces should become hidden
-      neighbor->setLODUpdateAll();
+      neighbor->setMeshNeedsUpdate();
       neighbor->status = ChunkState::WAITING_FOR_MESH_UPDATE;
     }
   }
@@ -369,18 +352,16 @@ void WorldManager::unloadChunk(const glm::ivec3 &pos) {
 
     auto it = chunk_map.find(pos);
     if (it == chunk_map.end() || it->second == nullptr) {
-      return; // Already unloaded
+      return;
     }
 
     chunkToDelete = it->second;
 
-    // PHASE 1: Sever all connections BEFORE deleting
     const glm::ivec3 offsets[6] = {glm::ivec3(1, 0, 0), glm::ivec3(-1, 0, 0),
                                    glm::ivec3(0, 1, 0), glm::ivec3(0, -1, 0),
                                    glm::ivec3(0, 0, 1), glm::ivec3(0, 0, -1)};
     const int opposite[6] = {1, 0, 3, 2, 5, 4};
 
-    // Tell all neighbors to forget about this chunk
     for (int dir = 0; dir < 6; ++dir) {
       glm::ivec3 neighborPos = pos + offsets[dir];
       auto neighborIt = chunk_map.find(neighborPos);
@@ -388,38 +369,37 @@ void WorldManager::unloadChunk(const glm::ivec3 &pos) {
       if (neighborIt != chunk_map.end() && neighborIt->second != nullptr) {
         Chunk *neighbor = neighborIt->second;
 
-        // Clear the neighbor's pointer to THIS chunk
         neighbor->clearNeighbor(opposite[dir]);
 
-        // Neighbor now has an exposed face - remesh it
-        neighbor->setLODUpdateAll();
+        neighbor->setMeshNeedsUpdate();
         neighbor->status = ChunkState::WAITING_FOR_MESH_UPDATE;
       }
     }
 
-    // Clear this chunk's neighbor pointers (defensive)
     chunkToDelete->clearAllNeighbors();
 
-    // Remove from map
     chunk_map.erase(it);
     chunksLoaded.erase(pos);
   }
 
-  // Remove from activeChunks list
   {
+    // Remove from both parallel arrays using the swap-and-pop idiom.
+    // This is O(n) for the find but O(1) for the removal itself,
+    // matching the original behaviour while keeping arrays in sync.
     std::unique_lock<std::shared_mutex> lock(activeChunksMutex);
-    auto itVec =
-        std::find(activeChunks.begin(), activeChunks.end(), chunkToDelete);
+    auto itVec = std::find(activeChunks.begin(), activeChunks.end(), chunkToDelete);
     if (itVec != activeChunks.end()) {
-      *itVec = activeChunks.back();
+      size_t idx = std::distance(activeChunks.begin(), itVec);
+
+      // Swap-and-pop both arrays together so indices stay aligned.
+      activeChunks[idx]        = activeChunks.back();
+      activeChunkWorldPos[idx] = activeChunkWorldPos.back();
       activeChunks.pop_back();
+      activeChunkWorldPos.pop_back();
     }
   }
 
-  // PHASE 2: Queue for deletion AFTER releasing lock and severing all links
-  // We defer actual deletion to avoid use-after-free when main thread is
-  // iterating over chunks.
-  chunkToDelete->status = ChunkState::MARKED_FOR_DELETION;
+  chunkToDelete->markedForDeletion.store(true, std::memory_order_release);
   {
     std::lock_guard<std::mutex> del_lock(delete_queue_mutex);
     chunksToDelete.push_back(chunkToDelete);
