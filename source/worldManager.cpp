@@ -214,25 +214,93 @@ void WorldManager::queueChunksForLoading(const glm::ivec3 &cameraChunk,
       Chunk *chunk = new Chunk(task.position);
       bool isEmpty = true;
 
-      int heightMap[CHUNK_WIDTH][CHUNK_DEPTH];
-      for (int x = 0; x < CHUNK_WIDTH; ++x) {
-        for (int z = 0; z < CHUNK_DEPTH; ++z) {
-          float worldX = x + chunk->chunkPosition.x * CHUNK_WIDTH;
-          float worldZ = z + chunk->chunkPosition.z * CHUNK_DEPTH;
-          float perlinValue = glm::perlin(glm::vec2(worldX, worldZ) * 0.01f);
-          heightMap[x][z] =
-              static_cast<int>(((perlinValue + 1.0f) / 2.0f) * MAX_HEIGHT);
-        }
-      }
+      if (task.position.y > 0) {
+        float persistence = 0.5f;
+        float lacunarity = 2.0f;
+        int octaves = 4;
 
-      for (int x = 0; x < CHUNK_WIDTH; ++x) {
-        for (int z = 0; z < CHUNK_DEPTH; ++z) {
-          int height = heightMap[x][z];
+        float initialFrequency = 0.005f;
+
+        int heightMap [CHUNK_WIDTH][CHUNK_DEPTH];
+        for (int x = 0; x < CHUNK_WIDTH; ++x) {
+          for (int z = 0; z < CHUNK_DEPTH; ++z) {
+            float worldX = x + chunk->chunkPosition.x * CHUNK_WIDTH;
+            float worldZ = z + chunk->chunkPosition.z * CHUNK_DEPTH;
+            float amplitude = 1.0f;
+            float totalNoise = 0.0f;
+            float amplitudeSum = 0.0f;
+            float frequency = initialFrequency;
+
+            for (int i = 0; i < octaves; ++i) {
+              float perlinValue = glm::perlin(glm::vec2(worldX, worldZ) * frequency);
+              totalNoise += perlinValue * amplitude;
+              amplitudeSum += amplitude;
+
+              amplitude *= persistence;
+              frequency *= lacunarity;
+            }
+
+            float normalizedNoise = (amplitudeSum > 0.0f) ? (totalNoise / amplitudeSum) : 0.0f;
+            normalizedNoise = glm::clamp(normalizedNoise, -1.0f, 1.0f);
+
+            heightMap[x][z] = static_cast<int>(((normalizedNoise + 1.0f) / 2.0f) * MAX_HEIGHT);
+          }
+        }
+
+
+        for (int x = 0; x < CHUNK_WIDTH; ++x){
+          for (int z = 0; z < CHUNK_DEPTH; ++z){
+            int height = heightMap[x][z];
+            for (int y = 0; y < CHUNK_HEIGHT; ++y){
+              int worldY = y + chunk->chunkPosition.y * CHUNK_HEIGHT;
+              if (worldY < height){
+                chunk->setVoxel(x, y, z, Voxel::GREEN);//Voxel::GREEN); // Solid voxel
+                isEmpty = false;
+              }
+            }
+          }
+        }
+
+      } else {
+        float noiseMap[CHUNK_WIDTH][CHUNK_HEIGHT][CHUNK_DEPTH];
+        for (int x = 0; x < CHUNK_WIDTH; ++x) {
           for (int y = 0; y < CHUNK_HEIGHT; ++y) {
-            int worldY = y + chunk->chunkPosition.y * CHUNK_HEIGHT;
-            if (worldY <= height) {
-              chunk->setVoxel(x, y, z, Voxel::GREEN);
-              isEmpty = false;
+            for (int z = 0; z < CHUNK_DEPTH; ++z) {
+              float worldX = x + chunk->chunkPosition.x * CHUNK_WIDTH;
+              float worldY = y + chunk->chunkPosition.y * CHUNK_HEIGHT;
+              float worldZ = z + chunk->chunkPosition.z * CHUNK_DEPTH;
+              float noisevalue = glm::perlin(glm::vec3(worldX, worldY, worldZ) * 0.01f);
+                          
+              noiseMap[x][y][z] = glm::clamp((noisevalue + 1.0f) / 2.0f, 0.0f, 1.0f);
+            }
+          }
+        }
+        
+        for (int x = 0; x < CHUNK_WIDTH; ++x) {
+          for (int y = 0; y < CHUNK_HEIGHT; ++y) {
+            float gradient = 0.0f;
+            if (task.position.y > -1) {
+              gradient = y * 0.02f;
+            } else if (task.position.y > -2){
+              gradient = (y - 16.0f) * 0.01f;
+            }
+            for (int z = 0; z < CHUNK_DEPTH; ++z) {
+              float density = noiseMap[x][y][z];
+              if (task.position.y > -2) {
+                if (density > 0.4f - gradient) {
+                  chunk->setVoxel(x, y, z, Voxel::GREEN); // Solid voxel
+                  isEmpty = false;
+                } else {
+                  chunk->setVoxel(x, y, z, 0); // Air voxel
+                }
+              } else {
+                if (density > 0.565f){
+                  chunk->setVoxel(x, y, z, Voxel::GREEN); // Solid voxel
+                  isEmpty = false;
+                } else {
+                  chunk->setVoxel(x, y, z, 0); // Air voxel
+                }
+              }
             }
           }
         }

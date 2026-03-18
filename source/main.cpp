@@ -62,8 +62,8 @@ int main() {
 
   // Initialize systems
   ThreadPool loadingPool(4);
-  ThreadPool updatePool(3);
-  WorldManager worldManager(48);
+  ThreadPool updatePool(4);
+  WorldManager worldManager(32);
 
   Shader baseShader("source/base.vs", "source/base.fs");
 
