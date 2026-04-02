@@ -3,12 +3,15 @@
 #include <glm/glm.hpp>
 #include <array>
 
+// Raw (unnormalized) plane — only the sign of the normal matters for p-vertex
+// selection, and the dot-product test is sign-equivalent without normalization.
+// Skipping 6 sqrts per frame and keeping values in their natural scale.
 struct Plane {
     glm::vec3 normal;
     float distance;
-    
+
     Plane() : normal(0.0f), distance(0.0f) {}
-    
+
     inline float distanceToPoint(const glm::vec3& point) const {
         return glm::dot(normal, point) + distance;
     }
@@ -24,150 +27,132 @@ public:
         NEAR,
         FAR
     };
-    
+
     std::array<Plane, 6> planes;
-    
-    void update(const glm::mat4& projectionViewMatrix) {
-        // Extract frustum planes from projection-view matrix
-        // Left plane
-        planes[LEFT].normal.x = projectionViewMatrix[0][3] + projectionViewMatrix[0][0];
-        planes[LEFT].normal.y = projectionViewMatrix[1][3] + projectionViewMatrix[1][0];
-        planes[LEFT].normal.z = projectionViewMatrix[2][3] + projectionViewMatrix[2][0];
-        planes[LEFT].distance = projectionViewMatrix[3][3] + projectionViewMatrix[3][0];
-        
-        // Right plane
-        planes[RIGHT].normal.x = projectionViewMatrix[0][3] - projectionViewMatrix[0][0];
-        planes[RIGHT].normal.y = projectionViewMatrix[1][3] - projectionViewMatrix[1][0];
-        planes[RIGHT].normal.z = projectionViewMatrix[2][3] - projectionViewMatrix[2][0];
-        planes[RIGHT].distance = projectionViewMatrix[3][3] - projectionViewMatrix[3][0];
-        
-        // Bottom plane
-        planes[BOTTOM].normal.x = projectionViewMatrix[0][3] + projectionViewMatrix[0][1];
-        planes[BOTTOM].normal.y = projectionViewMatrix[1][3] + projectionViewMatrix[1][1];
-        planes[BOTTOM].normal.z = projectionViewMatrix[2][3] + projectionViewMatrix[2][1];
-        planes[BOTTOM].distance = projectionViewMatrix[3][3] + projectionViewMatrix[3][1];
-        
-        // Top plane
-        planes[TOP].normal.x = projectionViewMatrix[0][3] - projectionViewMatrix[0][1];
-        planes[TOP].normal.y = projectionViewMatrix[1][3] - projectionViewMatrix[1][1];
-        planes[TOP].normal.z = projectionViewMatrix[2][3] - projectionViewMatrix[2][1];
-        planes[TOP].distance = projectionViewMatrix[3][3] - projectionViewMatrix[3][1];
-        
-        // Near plane
-        planes[NEAR].normal.x = projectionViewMatrix[0][3] + projectionViewMatrix[0][2];
-        planes[NEAR].normal.y = projectionViewMatrix[1][3] + projectionViewMatrix[1][2];
-        planes[NEAR].normal.z = projectionViewMatrix[2][3] + projectionViewMatrix[2][2];
-        planes[NEAR].distance = projectionViewMatrix[3][3] + projectionViewMatrix[3][2];
-        
-        // Far plane
-        planes[FAR].normal.x = projectionViewMatrix[0][3] - projectionViewMatrix[0][2];
-        planes[FAR].normal.y = projectionViewMatrix[1][3] - projectionViewMatrix[1][2];
-        planes[FAR].normal.z = projectionViewMatrix[2][3] - projectionViewMatrix[2][2];
-        planes[FAR].distance = projectionViewMatrix[3][3] - projectionViewMatrix[3][2];
-        
-        // Normalize all planes
-        for (int i = 0; i < 6; i++) {
-            float length = glm::length(planes[i].normal);
-            planes[i].normal /= length;
-            planes[i].distance /= length;
+
+    // Precomputed per-plane: the offset added to minPoint to get the p-vertex
+    // for an AABB with a fixed size of 16. Computed once in update().
+    // pVertexOffset[i] = dot(max(normal, 0), vec3(16)) per component.
+    // For a cube chunk of side S: p-vertex dot = dot(n, min) + dot(max(n,0), vec3(S))
+    float pVertexDot[6]; // = nx*(nx>0)*S + ny*(ny>0)*S + nz*(nz>0)*S, the fixed addend
+
+    // For general AABB tests we still store sign masks (0 or 1 per component)
+    // so callers can reconstruct the p-vertex cheaply.
+    glm::vec3 pVertexMask[6]; // each component is 0.0 or 1.0
+
+    void update(const glm::mat4& m) {
+        // Gribb/Hartmann extraction (column-major GLM layout)
+        // No normalization — sign of distance is all we need.
+        planes[LEFT].normal.x  =  m[0][3] + m[0][0];
+        planes[LEFT].normal.y  =  m[1][3] + m[1][0];
+        planes[LEFT].normal.z  =  m[2][3] + m[2][0];
+        planes[LEFT].distance  =  m[3][3] + m[3][0];
+
+        planes[RIGHT].normal.x =  m[0][3] - m[0][0];
+        planes[RIGHT].normal.y =  m[1][3] - m[1][0];
+        planes[RIGHT].normal.z =  m[2][3] - m[2][0];
+        planes[RIGHT].distance =  m[3][3] - m[3][0];
+
+        planes[BOTTOM].normal.x = m[0][3] + m[0][1];
+        planes[BOTTOM].normal.y = m[1][3] + m[1][1];
+        planes[BOTTOM].normal.z = m[2][3] + m[2][1];
+        planes[BOTTOM].distance = m[3][3] + m[3][1];
+
+        planes[TOP].normal.x   =  m[0][3] - m[0][1];
+        planes[TOP].normal.y   =  m[1][3] - m[1][1];
+        planes[TOP].normal.z   =  m[2][3] - m[2][1];
+        planes[TOP].distance   =  m[3][3] - m[3][1];
+
+        planes[NEAR].normal.x  =  m[0][3] + m[0][2];
+        planes[NEAR].normal.y  =  m[1][3] + m[1][2];
+        planes[NEAR].normal.z  =  m[2][3] + m[2][2];
+        planes[NEAR].distance  =  m[3][3] + m[3][2];
+
+        planes[FAR].normal.x   =  m[0][3] - m[0][2];
+        planes[FAR].normal.y   =  m[1][3] - m[1][2];
+        planes[FAR].normal.z   =  m[2][3] - m[2][2];
+        planes[FAR].distance   =  m[3][3] - m[3][2];
+
+        // Precompute the fixed chunk-size addend for isChunkVisible.
+        // For each plane: pVertexDot = sum of (normal[i] > 0 ? 16 : 0)
+        // This is the part of dot(p-vertex, normal) that doesn't depend on
+        // the chunk's world position, so we only pay for it once per frame.
+        constexpr float S = 16.0f;
+        for (int i = 0; i < 6; ++i) {
+            const glm::vec3& n = planes[i].normal;
+            pVertexMask[i] = glm::vec3(
+                n.x >= 0.0f ? 1.0f : 0.0f,
+                n.y >= 0.0f ? 1.0f : 0.0f,
+                n.z >= 0.0f ? 1.0f : 0.0f
+            );
+            pVertexDot[i] = (n.x >= 0.0f ? n.x : 0.0f) * S
+                          + (n.y >= 0.0f ? n.y : 0.0f) * S
+                          + (n.z >= 0.0f ? n.z : 0.0f) * S;
         }
     }
-    
-    // Optimized AABB test with early-out
+
+    // General AABB test. Uses precomputed sign masks to pick the p-vertex.
     inline bool isBoxVisible(const glm::vec3& minPoint, const glm::vec3& maxPoint) const {
-        // Test against each plane
-        // Most chunks fail on near/far planes first, so test those early
-        for (int i : {NEAR, FAR, LEFT, RIGHT, TOP, BOTTOM}) {
-            const Plane& plane = planes[i];
-            
-            // Get positive vertex (furthest in direction of plane normal)
-            // Using direct comparisons instead of conditionals for branch prediction
-            glm::vec3 positiveVertex;
-            positiveVertex.x = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
-            positiveVertex.y = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
-            positiveVertex.z = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
-            
-            // Early out if outside this plane
-            if (plane.distanceToPoint(positiveVertex) < 0) {
+        for (int i = 0; i < 6; ++i) {
+            const Plane& p = planes[i];
+            const glm::vec3& mask = pVertexMask[i];
+
+            // p-vertex: per component, pick max if normal >= 0, else min
+            float px = minPoint.x + mask.x * (maxPoint.x - minPoint.x);
+            float py = minPoint.y + mask.y * (maxPoint.y - minPoint.y);
+            float pz = minPoint.z + mask.z * (maxPoint.z - minPoint.z);
+
+            if (p.normal.x * px + p.normal.y * py + p.normal.z * pz + p.distance < 0.0f)
                 return false;
-            }
         }
         return true;
     }
-    
-    // Optimized chunk visibility test
-    inline bool isChunkVisible(const glm::vec3& chunkWorldPos, float chunkSize = 16.0f) const {
-        // Pre-compute min/max once
-        const glm::vec3 minPoint = chunkWorldPos;
-        const glm::vec3 maxPoint = chunkWorldPos + chunkSize;
-        
-        // Unrolled loop for better performance - test most discriminating planes first
-        // Near plane (most chunks fail here)
+
+    // Fast path for axis-aligned cubic chunks of fixed size 16.
+    //
+    // The p-vertex dot product splits into two parts:
+    //   dot(n, p-vertex) = dot(n, minPoint) + pVertexDot[i]
+    //
+    // pVertexDot[i] was precomputed in update() and doesn't change per chunk,
+    // so each plane test costs: 3 muls + 2 adds + 1 compare.
+    // Plane order: NEAR, FAR, LEFT, RIGHT, TOP, BOTTOM — most likely to cull first.
+    inline bool isChunkVisible(const glm::vec3& minPoint, float /*chunkSize*/ = 16.0f) const {
+        // NEAR
         {
-            const Plane& plane = planes[NEAR];
-            float px = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
-            float py = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
-            float pz = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
-            if (plane.normal.x * px + plane.normal.y * py + plane.normal.z * pz + plane.distance < 0) {
-                return false;
-            }
+            const Plane& p = planes[NEAR];
+            if (p.normal.x * minPoint.x + p.normal.y * minPoint.y + p.normal.z * minPoint.z
+                + pVertexDot[NEAR] + p.distance < 0.0f) return false;
         }
-        
-        // Far plane
+        // FAR
         {
-            const Plane& plane = planes[FAR];
-            float px = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
-            float py = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
-            float pz = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
-            if (plane.normal.x * px + plane.normal.y * py + plane.normal.z * pz + plane.distance < 0) {
-                return false;
-            }
+            const Plane& p = planes[FAR];
+            if (p.normal.x * minPoint.x + p.normal.y * minPoint.y + p.normal.z * minPoint.z
+                + pVertexDot[FAR] + p.distance < 0.0f) return false;
         }
-        
-        // Left plane
+        // LEFT
         {
-            const Plane& plane = planes[LEFT];
-            float px = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
-            float py = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
-            float pz = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
-            if (plane.normal.x * px + plane.normal.y * py + plane.normal.z * pz + plane.distance < 0) {
-                return false;
-            }
+            const Plane& p = planes[LEFT];
+            if (p.normal.x * minPoint.x + p.normal.y * minPoint.y + p.normal.z * minPoint.z
+                + pVertexDot[LEFT] + p.distance < 0.0f) return false;
         }
-        
-        // Right plane
+        // RIGHT
         {
-            const Plane& plane = planes[RIGHT];
-            float px = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
-            float py = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
-            float pz = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
-            if (plane.normal.x * px + plane.normal.y * py + plane.normal.z * pz + plane.distance < 0) {
-                return false;
-            }
+            const Plane& p = planes[RIGHT];
+            if (p.normal.x * minPoint.x + p.normal.y * minPoint.y + p.normal.z * minPoint.z
+                + pVertexDot[RIGHT] + p.distance < 0.0f) return false;
         }
-        
-        // Top plane
+        // TOP
         {
-            const Plane& plane = planes[TOP];
-            float px = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
-            float py = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
-            float pz = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
-            if (plane.normal.x * px + plane.normal.y * py + plane.normal.z * pz + plane.distance < 0) {
-                return false;
-            }
+            const Plane& p = planes[TOP];
+            if (p.normal.x * minPoint.x + p.normal.y * minPoint.y + p.normal.z * minPoint.z
+                + pVertexDot[TOP] + p.distance < 0.0f) return false;
         }
-        
-        // Bottom plane
+        // BOTTOM
         {
-            const Plane& plane = planes[BOTTOM];
-            float px = (plane.normal.x >= 0) ? maxPoint.x : minPoint.x;
-            float py = (plane.normal.y >= 0) ? maxPoint.y : minPoint.y;
-            float pz = (plane.normal.z >= 0) ? maxPoint.z : minPoint.z;
-            if (plane.normal.x * px + plane.normal.y * py + plane.normal.z * pz + plane.distance < 0) {
-                return false;
-            }
+            const Plane& p = planes[BOTTOM];
+            if (p.normal.x * minPoint.x + p.normal.y * minPoint.y + p.normal.z * minPoint.z
+                + pVertexDot[BOTTOM] + p.distance < 0.0f) return false;
         }
-        
         return true;
     }
 };
