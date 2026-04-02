@@ -2,6 +2,8 @@
 layout (points) in;
 layout (triangle_strip, max_vertices = 4) out;
 
+//out vec3 FragPos;
+
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
@@ -12,9 +14,13 @@ in VS_OUT {
     int face;
     int color;
     int lod;
+    vec3 FragPos;
+    vec3 Normal;
 } gs_in[];
 
 flat out int fsColor;
+flat out vec3 FragPos;
+flat out vec3 Normal;
 
 const vec3 cubeFaces[24] = vec3[24](
     // Front Face (Z = 0.5)
@@ -47,6 +53,8 @@ void main() {
     float heightU = float(gs_in[0].height);
 
     fsColor = gs_in[0].color;
+    Normal = gs_in[0].Normal;
+    FragPos = gs_in[0].FragPos;
 
     int face = gs_in[0].face;
     
@@ -59,27 +67,25 @@ void main() {
         // FRONT/BACK: d=2(Z), u=0(X), v=1(Y)
         // height expands in u(X), length expands in v(Y)
         scale = vec3(heightU, lengthV, lod_scale - 1.0);
-        fsColor = 1;
     } else if (face == 2 || face == 3) {
         // TOP/BOTTOM: d=1(Y), u=0(X), v=2(Z)
         // height expands in u(X), length expands in v(Z)
         scale = vec3(heightU, lod_scale - 1.0, lengthV);
-        fsColor = 2;
     } else {
         // LEFT/RIGHT: d=0(X), u=1(Y), v=2(Z)
         // height expands in u(Y), length expands in v(Z)
         scale = vec3(lod_scale - 1.0, heightU, lengthV);
-        fsColor = 3;
     }
 
     // Transform vertices from centered cube space to world space
-    // The localVertex is in [-0.5, 0.5] range, so we need to:
+    // The localVerthex is in [-0.5, 0.5] range, so we need to:
     // 1. Scale it by the mesh dimensions
     // 2. Shift it so it starts at basePos (which is the corner, not center)
     for (int i = 0; i < 4; i++) {
         vec3 localVertex = cubeFaces[index + i] + 0.5;
         // Scale and shift: multiply by scale, add 0.5 to get [0,1] range, then add basePos
         vec3 worldVertex = basePos + localVertex * scale;
+        //FragPos = vec3(model * vec4(worldVertex, 1.0));
         gl_Position = pv * vec4(worldVertex, 1.0);
         EmitVertex();
     }

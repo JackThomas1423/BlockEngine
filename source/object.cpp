@@ -13,6 +13,8 @@ Object::Object(const void* vertexData, size_t vertexDataSize, const std::vector<
         bindIndices(*indices);
     }
 
+    stride = calculateStride(attributes);
+
     setVertexPointers(attributes);
     // Calculate and store vertex count based on provided vertex data and attribute stride
     size_t stride = calculateStride(attributes);
@@ -127,7 +129,7 @@ size_t Object::calculateStride(const std::vector<VertexAttribute>& attributes)
 
 void Object::setVertexPointers(const std::vector<VertexAttribute>& attributes)
 {
-    size_t stride = calculateStride(attributes);
+    stride = calculateStride(attributes);
     size_t currentOffset = 0;
     
     for (size_t i = 0; i < attributes.size(); ++i) {
@@ -174,7 +176,7 @@ void Object::draw()
     bindVertexArray();
     
     if (EBO != 0) {
-        glDrawElements(primitiveType, 0, GL_UNSIGNED_INT, 0);
+        glDrawElements(primitiveType, indexCount * stride, GL_UNSIGNED_INT, 0);
     } else {
         glDrawArrays(primitiveType, 0, static_cast<GLsizei>(vertexCount));
     }

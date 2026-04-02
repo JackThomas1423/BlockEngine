@@ -6,16 +6,14 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
-out vec3 FragPos;  
-out vec3 Normal;
-
-
 out VS_OUT {
   int length;
   int height;
   int face;
   int color;
   int lod;
+  vec3 FragPos;
+  vec3 Normal;
 } vs_out;
 
 // Optimized bit layout:
@@ -40,7 +38,27 @@ out VS_OUT {
 #define GET_CHUNK_Z(packed)   (((packed) >> 16u) & 0xFFu) - 128
 #define GET_CHUNK_LOD(packed) (((packed) >> 24u) & 0xFFu) - 128
 
+/*
+// Left Right might need to be swapped idk
+const vec3 normalConvert[6] = vec3[6](
+    vec3(0.0, 0.0, -1.0), // Front
+    vec3(0.0, 0.0, 1.0), // Back
+    vec3(0.0, 1.0, 0.0), // Top
+    vec3(0.0, -1.0, 0.0), // Bottom
+    vec3(-1.0, 0.0, 0.0), // Left
+    vec3(1.0, 0.0, 0.0)  // Right
+);*/
+const vec3 normalConvert[6] = vec3[6](
+    vec3(0.0, 0.0, 1.0), // Front
+    vec3(0.0, 0.0, -1.0), // Back
+    vec3(0.0, 1.0, 0.0), // Top
+    vec3(0.0, -1.0, 0.0), // Bottom
+    vec3(-1.0, 0.0, 0.0), // Left
+    vec3(1.0, 0.0, 0.0)  // Right
+);
+
 void main() {
+    
     int x = int(GET_X(packedData));
     int y = int(GET_Y(packedData));
     int z = int(GET_Z(packedData));
@@ -51,14 +69,15 @@ void main() {
 
     ivec3 chunkOffset = ivec3(GET_CHUNK_X(packedChunkPosition), GET_CHUNK_Y(packedChunkPosition), GET_CHUNK_Z(packedChunkPosition)) * ivec3(16,16,16);
     vec3 worldPosition = vec3(x, y, z) + chunkOffset;
-
-    gl_Position = vec4(worldPosition, 1.0);
+    vs_out.FragPos = vec3(model * vec4(worldPosition, 1.0));
+    
+    //gl_position was here
     vs_out.color = color;
     vs_out.face = face;
     vs_out.length = length;
     vs_out.height = height;
     vs_out.lod = int(GET_CHUNK_LOD(packedChunkPosition));
-    FragPos = vec3(model * vec4(aPos, 1.0));
-    Normal = mat3(transpose(inverse(model))) * face;
+    vs_out.Normal = mat3(transpose(inverse(model))) * normalConvert[face];
+    gl_Position = vec4(worldPosition, 1.0); 
 
 }

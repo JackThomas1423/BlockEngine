@@ -44,6 +44,7 @@ class Object {
         std::vector<InstanceGroup> instanceGroups;                    // Stores sections of the mesh to instance
         std::vector<InstancedAttributeInfo> instancedAttributeInfos;  // Stores attribute data about each instance group
         GLenum primitiveType;
+        size_t stride = 0;
         size_t vertexCount = 0; // number of vertices (when not using EBO)
         size_t indexCount = 0;  // number of indices (when using EBO)
         
@@ -76,9 +77,3 @@ class Object {
         size_t getTypeSize(GLenum type);
         size_t calculateStride(const std::vector<VertexAttribute>& attributes);
 };
-
-template<typename T>
-size_t Object::addInstancedAttribute(int attributeLocation, const std::vector<T>& data, int componentCount, GLenum type, bool normalized, GLenum usage, int skip)
-{
-    return addInstancedAttribute(attributeLocation, componentCount, type, data.data(), data.size() * sizeof(T), normalized, usage, skip);
-}

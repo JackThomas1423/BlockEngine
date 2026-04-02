@@ -1,5 +1,6 @@
 class Camera {
-        private:
+    //rember you changed the first coded below to public from privet
+        public:
             glm::vec3 position;
             glm::vec3 front;
             glm::vec3 up;

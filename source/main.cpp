@@ -6,7 +6,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "shader.hpp"
-#include "ObjectSun.hpp"
+//#include "ObjectSun.hpp"
 #include "object.hpp"
 #include "camera.hpp"
 #include "voxel.hpp"
@@ -34,8 +34,7 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void processInput(GLFWwindow *window);
 
-// lighting
-glm::vec3 lightPos(1.2f, 1.0f, 1.0f);
+
 
 int main()
 {
@@ -64,19 +63,23 @@ int main()
     }
 
     // Initialize systems
-    ThreadPool threadPool(6);
-    WorldManager worldManager(64);
+    ThreadPool threadPool(4);
+    WorldManager worldManager(12);
     LODManager lodManager;
 
     // Setup OpenGL objects
     std::vector<unsigned int> indices = {};
-    std::vector<VertexAttribute> attributes = {
+    std::vector<VertexAttribute> VoxelAttributes = {
         VertexAttribute(GL_UNSIGNED_INT, 1, false),
         VertexAttribute(GL_UNSIGNED_INT, 1, false)
     };
 
+    std::vector<VertexAttribute> SunAttributes = {
+        VertexAttribute(GL_FLOAT, 3, false)
+    };
+
     std::vector<ChunkVertex> initialVertices;
-    Object obj(initialVertices, attributes, &indices, GL_POINTS);
+    Object voxelObj(initialVertices, VoxelAttributes, &indices, GL_POINTS);
 
     std::vector<float> sunVertices = {
         //position
@@ -91,6 +94,8 @@ int main()
 
         
     };
+    
+
     std::vector<unsigned int> sunIndices = {
       0, 1, 3,// 1st Triangle
       1, 2, 3,// 2st Triangle
@@ -107,49 +112,20 @@ int main()
       
 
     };
-    //copy and paste
-    unsigned int VBOS, EBOS, SunVAO;
-    glGenBuffers(1, &VBOS);
-    glGenBuffers(1, &EBOS);
-    glGenVertexArrays(1, &SunVAO);
 
-    glBindVertexArray(SunVAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, VBOS);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * sunVertices.size(), sunVertices.data(), GL_STATIC_DRAW);
-     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBOS);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(sunIndices), sunIndices.data(), GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0); 
-    glBindVertexArray(0);
-
-
-
-
-     
+    Object sunObj(sunVertices, SunAttributes, &sunIndices, GL_TRIANGLES);
    
-
-    std::vector<VertexAttribute> sunAttributes = {
-           
-    };
-
-    /*
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    */
-    Object sun(sunVertices, sunAttributes, &sunIndices, GL_TRIANGLES);
-
 
     Shader baseShader("source/base.vs", "source/base.gs", "source/base.fs");
     Shader SunShader("source/light.vs",  "source/light.fs");
+   
+
 
     // OpenGL state
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-    glFrontFace(GL_CCW);
+    //glEnable(GL_CULL_FACE);
+    //glCullFace(GL_BACK);
+    //glFrontFace(GL_CCW);
     glEnable(GL_DEPTH_TEST);
     
     // Create frustum for culling
@@ -174,6 +150,7 @@ int main()
     // Main render loop
     while (!glfwWindowShouldClose(window))
     {
+        
         float currentFrame = static_cast<float>(glfwGetTime());
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
@@ -189,6 +166,8 @@ int main()
         glm::mat4 projection = camera.getProjectionMatrix((float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 10000.0f);
         glm::mat4 model = glm::mat4(1.0f);
 
+   
+        
         // Update frustum
         glm::mat4 projectionView = projection * view;
         frustum.update(projectionView);
@@ -204,10 +183,39 @@ int main()
         chunksRendered = 0;
         chunksCulled = 0;
 
+        double slowTime = glfwGetTime() * 0.01f;
+        // lighting
+        glm::vec3 lightPos(static_cast<float>(-600.0f*sin(slowTime * 2.0))+cameraPos.x, static_cast<float>(400.0f*sin(slowTime * 1.0)-50)+cameraPos.y, cameraPos.z);
+
+        
         // Set shader uniforms once
         baseShader.use();
+        glm::vec3 lightColor;
+        lightColor.x = static_cast<float>(.4f*sin(slowTime * 1.0)+0.65f);
+        lightColor.y = static_cast<float>(.4f*sin(slowTime * 1.0)+0.65f);
+        lightColor.z = static_cast<float>(.4f*sin(slowTime * 1.0)+0.65f);
+        glm::vec3 diffuseColor = lightColor * glm::vec3(1.0f); // decrease the influence
+        glm::vec3 ambientColor = diffuseColor * glm::vec3(1.0f); // low influence
+        baseShader.setVec3("lightColor", lightColor);
+        baseShader.setVec3("light.ambient", ambientColor);
+        baseShader.setVec3("light.diffuse", diffuseColor);
+        baseShader.setVec3("light.specular", 1.0f, 1.0f, 1.0f);
+        baseShader.setVec3("light.position", lightPos);
+        
+      
+
+        //glm::f32 shininess;
+        //baseShader.setFloat("material.shininess", shininess);
+
         baseShader.setMat4("projection", projection);
         baseShader.setMat4("view", view);
+        
+        // world transformation
+        baseShader.setVec3("viewPos", camera.position);
+        glm::mat4 sunmodel = glm::mat4(1.0f);
+        baseShader.setMat4("model", sunmodel);
+        //Flashlight code
+
 
         static float totalCopyTime = 0.0f;
         static float lockTime = 0.0f;
@@ -238,44 +246,6 @@ int main()
                     chunk->setLODLevel(newLOD);
                 }
 
-        // Set shader uniforms for voxel rendering
-        //draw our base block
-        baseShader.use();
-        baseShader.setVec3("lightPos", lightPos);
-        baseShader.setMat4("model",model);
-        baseShader.setMat4("view", view);
-        baseShader.setMat4("projection", projection);
-        baseShader.setVec3("lightColor", 0.5f, 1.0f, 1.0f);
-        /*
-        baseShader.setVec3("lightPos", lightPos);
-        baseShader.setMat4("projection", projection);
-        baseShader.setMat4("view", view);
-        glm::mat4 model = glm::mat4(1.0f);
-        baseShader.setMat4("model", model);
-        // material properties
-        base.setVec3("material.ambient", 1.0f, 0.5f, 0.31f);
-        base.setVec3("material.diffuse", 1.0f, 0.5f, 0.31f);
-*/
-
-      
-        
-
-       // draw our sun
-       SunShader.use();
-       SunShader.setVec3("lightPos", lightPos);
-       SunShader.setMat4("projection", projection);
-       //SunShader.setVec3("lightColor", 1.0f, 1.0f, 1.0f);
-       glm::mat4 model = glm::mat4(1.0f);
-       SunShader.setMat4("model", model);
-       model = glm::mat4(1.0f);
-       model = glm::translate(model, lightPos);
-       glBindVertexArray(SunVAO);
-
-       //sun.bindVertexArray();
-       glDrawArrays(GL_TRIANGLES, 0, 36);
-
-    
-
                 // Get mesh data for current LOD
                 const std::vector<Voxel::PackedVoxel>& chunkVertices = chunk->getMeshData(newLOD);
                 uint32_t chunkOffset = packChunkOffset(chunk->chunkPosition, chunk->currentLOD);
@@ -300,14 +270,38 @@ int main()
 
         // Render all visible chunks
         static float uploadTime = 0.0f;
+        //Put ! infront of if statement to toggle terrain
         if (!frameVertices.empty()) {
             auto startTime = std::chrono::high_resolution_clock::now();
-            obj.bindVertices(frameVertices.data(), frameVertices.size() * sizeof(ChunkVertex), GL_DYNAMIC_DRAW);
-            obj.vertexCount = frameVertices.size();
-            obj.draw();
+            voxelObj.bindVertices(frameVertices.data(), frameVertices.size() * sizeof(ChunkVertex), GL_DYNAMIC_DRAW);
+            voxelObj.vertexCount = frameVertices.size();
+            voxelObj.draw();
             auto endTime = std::chrono::high_resolution_clock::now();
             uploadTime += std::chrono::duration<float, std::milli>(endTime - startTime).count();
         }
+
+        SunShader.use();
+        SunShader.setMat4("projection", projection);
+        SunShader.setMat4("view", view);
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, lightPos);
+        model = glm::scale(model, glm::vec3(25.0f)); 
+        glm::vec3 lighter;
+        lighter.x = static_cast<float>(.4f*sin(slowTime * 1.0)+0.65f);
+        lighter.y = static_cast<float>(.4f*sin(slowTime * 1.0)+0.5f);
+        lighter.z = static_cast<float>(.05f*sin(slowTime * 1.0)+0.1f);
+        SunShader.setVec3("lighter", lighter);
+        SunShader.setMat4("model", model);
+
+        sunObj.bindVertices(sunVertices.data(), sunVertices.size() * (sizeof(glm::vec3)), GL_DYNAMIC_DRAW);
+        sunObj.bindVertexArray();
+        glDrawElements(GL_TRIANGLES, sunIndices.size() * sizeof(glm::vec3), GL_UNSIGNED_INT, 0);
+
+
+        
+
+        
+
 
         // Print stats every second
         if (currentFrame - lastInfoTime > 1.0f) {
@@ -333,12 +327,6 @@ int main()
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
-    // optional: de-allocate all resources once they've outlived their purpose:
-    // ------------------------------------------------------------------------
-
-    glDeleteVertexArrays(1, &SunVAO);
-    glDeleteBuffers(1, &VBOS);
-    glDeleteBuffers(1, &EBOS);
 
     // Cleanup
     worldManager.stop();
@@ -366,7 +354,7 @@ void processInput(GLFWwindow *window)
 
 
     // Camera movement
-    float cameraSpeed = 50.0f * deltaTime;
+    float cameraSpeed = 75.0f * deltaTime;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         camera.translate(cameraSpeed * camera.getFront());
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
