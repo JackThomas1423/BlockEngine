@@ -18,6 +18,7 @@
 				"${workspaceFolder}/source/shader.cpp",
 				"${workspaceFolder}/source/voxel.cpp",
 				"${workspaceFolder}/source/chunk.cpp",
+				"${workspaceFolder}/source/object.cpp",
 				"${workspaceFolder}/source/worldManager.cpp",
 				"-lglfw3.4",
 				"-o",

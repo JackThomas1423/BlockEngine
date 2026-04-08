@@ -2,9 +2,10 @@
 out vec4 FragColor;
 
 flat in int fsColor;
-flat in vec3 FragPos;
-flat in vec3 Normal;
-
+//flat in vec3 FragPos;
+//flat in vec3 Normal;
+in vec3 FragPos;
+in vec3 Normal;
 struct Light {
     vec3 position;
     vec3 ambient;

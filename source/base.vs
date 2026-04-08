@@ -6,18 +6,10 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 
-out VS_OUT {
-  int length;
-  int height;
-  int face;
-  int color;
-  int lod;
-  vec3 FragPos;
-  vec3 Normal;
-} vs_out;
-
 flat out int fsColor;
-
+//flat out vec3 Normal;
+out vec3 FragPos;
+out vec3 Normal;
 // Vertex data unpacking (32-bit)
 #define GET_X(data) (((data) >> 0u) & 0xFu)
 #define GET_Y(data) (((data) >> 4u) & 0xFu)
@@ -120,7 +112,8 @@ void main() {
     
     vec3 worldVertex = worldPosition + localVertex * scale;
 
-    mat4 pv = projection * view;
-    vs_out.Normal = mat3(transpose(inverse(model))) * normalConvert[face];
+    mat4 pv = projection * view * model;
+    FragPos = vec3(model * vec4(worldVertex, 1.0));
+    Normal = mat3(transpose(inverse(model))) * normalConvert[face];
     gl_Position = pv * vec4(worldVertex, 1.0);
 }

@@ -81,41 +81,47 @@ int main()
     Object voxelObj(initialVertices, VoxelAttributes, &indices, GL_POINTS);
 
     std::vector<float> sunVertices = {
-        //position
-        0.5f,  0.5f, 0.5f,  //  front top right
-        0.5f, -0.5f, 0.5f, // front bottom right
-        -0.5f, -0.5f, 0.5f,  // front bottom left
-        -0.5f,  0.5f, 0.5f, // front top left
-        0.5f,  0.5f, -0.5f,  //  back top right
-        0.5f, -0.5f, -0.5f,  // back bottom right
-        -0.5f, -0.5f, -0.5f, // back bottom left
-        -0.5f,  0.5f, -0.5f // back top left
+    // positions
+     0.5f,  0.5f,  0.5f,  // 0 front top right
+     0.5f, -0.5f,  0.5f,  // 1 front bottom right
+    -0.5f, -0.5f,  0.5f,  // 2 front bottom left
+    -0.5f,  0.5f,  0.5f,  // 3 front top left
+     0.5f,  0.5f, -0.5f,  // 4 back top right
+     0.5f, -0.5f, -0.5f,  // 5 back bottom right
+    -0.5f, -0.5f, -0.5f,  // 6 back bottom left
+    -0.5f,  0.5f, -0.5f   // 7 back top left
+};
 
-        
-    };
-    
+std::vector<unsigned int> sunIndices = {
+    // front
+    0, 1, 2,
+    0, 2, 3,
 
-    std::vector<unsigned int> sunIndices = {
-      0, 1, 3,// 1st Triangle
-      1, 2, 3,// 2st Triangle
-      4, 5, 7,// 3st Triangle
-      5, 6, 7,// 4st Triangle
-      4,5,1,// 5st Triangle
-      0,1,4,// 6st Triangle
-      6,7,2,// 7st Triangle
-      3,4,7,// 8st Triangle
-      1,2,6,// 9st Triangle
-      5,6,1,// 10st Triangle
-      0,7,4,// 11st Triangle
-      0,7,3,// 12st Triangle
-      
+    // back
+    4, 6, 5,
+    4, 7, 6,
 
-    };
+    // left
+    3, 2, 6,
+    3, 6, 7,
+
+    // right
+    0, 5, 1,
+    0, 4, 5,
+
+    // top
+    0, 3, 7,
+    0, 7, 4,
+
+    // bottom
+    1, 5, 6,
+    1, 6, 2
+};
 
     Object sunObj(sunVertices, SunAttributes, &sunIndices, GL_TRIANGLES);
    
 
-    Shader baseShader("source/base.vs", "source/base.gs", "source/base.fs");
+    Shader baseShader("source/base.vs", "source/base.fs");
     Shader SunShader("source/light.vs",  "source/light.fs");
    
     
@@ -178,7 +184,7 @@ int main()
 
     double slowTime = glfwGetTime() * 0.01f;
     // lighting
-    glm::vec3 lightPos(static_cast<float>(-600.0f*sin(slowTime * 2.0))+cameraPos.x, static_cast<float>(400.0f*sin(slowTime * 1.0)-50)+cameraPos.y, cameraPos.z);
+    glm::vec3 lightPos(static_cast<float>(-600.0f*sin(slowTime * 2.0)), static_cast<float>(400.0f*sin(slowTime * 1.0)-50)+cameraPos.y, cameraPos.z);
 
     baseShader.use();
     glm::vec3 lightColor;
