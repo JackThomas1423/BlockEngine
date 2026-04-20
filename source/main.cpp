@@ -145,6 +145,15 @@ std::vector<unsigned int> sunIndices = {
 
   // Reuse this allocation across frames to avoid per-frame heap churn.
   std::vector<Chunk *> visibleChunks;
+  // load textures (we now use a utility function to keep the code more organized)
+  // -----------------------------------------------------------------------------
+  unsigned int diffuseMap = loadTexture(FileSystem::getPath("resources/textures/container2.png").c_str());
+  unsigned int specularMap = loadTexture(FileSystem::getPath("resources/textures/container2_specular.png").c_str());
+
+  // shader configuration
+  baseShader.use();
+  baseShader.setInt("diffuses", 0);
+  baseShader.setInt("speculars", 1);
 
   // Main render loop
   while (!glfwWindowShouldClose(window)) {
@@ -198,8 +207,14 @@ std::vector<unsigned int> sunIndices = {
     baseShader.setVec3("light.diffuse", diffuseColor);
     baseShader.setVec3("light.specular", 1.0f, 1.0f, 1.0f);
     baseShader.setVec3("light.position", lightPos);
+    // bind diffuse map
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, diffuseMap);
+    // bind specular map
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, specularMap);    
 
-    baseShader.use();
+    //baseShader.use();
     baseShader.setMat4("projection", projection);
     baseShader.setMat4("view", view);
     baseShader.setVec3("viewPos", camera.position);

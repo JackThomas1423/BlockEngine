@@ -1,5 +1,8 @@
 #version 410 core
 layout (location = 0) in uint vertexData;    // Per-vertex: local pos, dimensions, color, face
+layout (location = 1) in vec2 aTexCoord;
+
+//uniform sampler2D testTexture;
 
 uniform uint instanceData;
 uniform mat4 model;
@@ -10,6 +13,7 @@ flat out int fsColor;
 //flat out vec3 Normal;
 out vec3 FragPos;
 out vec3 Normal;
+out vec2 TexCoord;
 // Vertex data unpacking (32-bit)
 #define GET_X(data) (((data) >> 0u) & 0xFu)
 #define GET_Y(data) (((data) >> 4u) & 0xFu)
@@ -55,6 +59,12 @@ const vec3 normalConvert[6] = vec3[6](
     vec3(-1.0, 0.0, 0.0), // Left
     vec3(1.0, 0.0, 0.0)  // Right
 );*/
+const vec2 textureConvert[4] = vec2[4](
+    vec2(0.0, 1.0),  // top-left
+    vec2(0.0, 0.0),  // bottom-left
+    vec2(1.0, 1.0),  // top-right
+    vec2(1.0, 0.0)   // bottom-right
+)
 const vec3 normalConvert[6] = vec3[6](
     vec3(0.0, 0.0, 1.0), // Front
     vec3(0.0, 0.0, -1.0), // Back
@@ -63,6 +73,7 @@ const vec3 normalConvert[6] = vec3[6](
     vec3(-1.0, 0.0, 0.0), // Left
     vec3(1.0, 0.0, 0.0)  // Right
 );
+
 
 void main() {
     // Unpack vertex data
@@ -73,6 +84,8 @@ void main() {
     int height = int(GET_HEIGHT(vertexData));
     int color  = int(GET_COLOR(vertexData));
     int face   = int(GET_FACING(vertexData));
+
+    //vec4 sample = texture(testTexture, aTexCoord)
     
     // Unpack instance data
     int chunkX = int(GET_CHUNK_X(instanceData));
@@ -116,4 +129,5 @@ void main() {
     FragPos = vec3(model * vec4(worldVertex, 1.0));
     Normal = mat3(transpose(inverse(model))) * normalConvert[face];
     gl_Position = pv * vec4(worldVertex, 1.0);
+    TexCoords = aTexCoords;
 }
